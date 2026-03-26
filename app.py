@@ -5,8 +5,8 @@ from datetime import datetime
 import sqlite3
 import re
 
-# --- 1. SETUP & DATABASE REPAIR ---
-st.set_page_config(page_title="TRADING_TERMINAL_V4", layout="wide")
+# --- 1. SETUP & DATABASE ---
+st.set_page_config(page_title="TRADING_TERMINAL_V4.2", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -16,7 +16,6 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, type TEXT, market TEXT, 
                   entry_info TEXT, entry_time TEXT, target TEXT, result TEXT, risk_pc REAL, rr REAL, 
                   notes TEXT, date TEXT, screenshot BLOB)''')
-    # Force columns to exist if they were missed in previous versions
     for col in [('entry_time', 'TEXT'), ('target', 'TEXT')]:
         try:
             c.execute(f'ALTER TABLE trades ADD COLUMN {col[0]} {col[1]}')
@@ -39,10 +38,6 @@ if not st.session_state.auth:
             st.session_state.auth = True
             st.rerun()
     st.stop()
-
-if st.sidebar.button("🔒 LOGOUT"):
-    st.session_state.auth = False
-    st.rerun()
 
 # --- 3. TABS ---
 tabs = st.tabs(["🏗️ ARCHITECT", "🔥 THE_FORGE", "📊 LIVE_DATA", "🧪 TEST_DATA", "📅 HISTORY", "📈 COMPOUNDER"])
@@ -75,7 +70,7 @@ with tabs[1]:
                 mod = st.selectbox("MODEL", models)
                 mkt = st.text_input("MARKET (NQ, OIL, ES)").upper()
                 ent_type = st.text_input("ENTRY_DETAILS (e.g. FVG + OB)")
-                ent_time = st.text_input("ENTRY_TIME (e.g. 08:30 or LONDON)")
+                ent_time = st.text_input("ENTRY_TIME (e.g. 09:30 or 14:15)")
             with c2:
                 targ = st.text_input("TARGET (e.g. BSL, SSL, 2R)")
                 res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
@@ -87,9 +82,8 @@ with tabs[1]:
             img = st.file_uploader("UPLOAD_CHART", type=['png', 'jpg', 'jpeg'])
             
             if st.form_submit_button("SAVE_ENTRY"):
-                # RUTHLESS CHECK: Stop errors before they happen
                 if not mkt or not ent_type or not ent_time:
-                    st.error("MISSING DATA: Please fill in Market, Entry Details, and Time.")
+                    st.error("MISSING DATA: Fill in Market, Entry Details, and Time.")
                 else:
                     img_data = img.read() if img else None
                     conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, target, 
@@ -104,23 +98,30 @@ def render_analytics(df_subset, suffix):
         st.info(f"NO DATA LOGGED FOR {suffix}.")
         return
 
-    def get_hour_int(t_str):
-        match = re.search(r'(\d{1,2})', str(t_str))
-        return int(match.group(1)) if match else None
+    # NEW 10-MINUTE ROUNDING LOGIC
+    def round_to_10(t_str):
+        match = re.search(r'(\d{1,2})[:.]?(\d{2})', str(t_str))
+        if match:
+            h, m = int(match.group(1)), int(match.group(2))
+            m = round(m / 10) * 10
+            if m == 60:
+                h = (h + 1) % 24
+                m = 0
+            return f"{h:02d}:{m:02d}"
+        return "OTHER"
 
-    df_subset['hour'] = df_subset['entry_time'].apply(get_hour_int)
-    time_counts = df_subset['hour'].value_counts().reindex(range(24), fill_value=0).reset_index()
-    time_counts.columns = ['Hour', 'Frequency']
-    time_counts['Hour_Label'] = time_counts['Hour'].apply(lambda x: f"{x:02d}:00")
+    df_subset['Rounded_Time'] = df_subset['entry_time'].apply(round_to_10)
+    df_subset = df_subset.sort_values(by='Rounded_Time')
 
-    st.subheader("⏱️ 24-HOUR DISTRIBUTION")
-    fig_bar = px.bar(time_counts, x='Hour_Label', y='Frequency', title=f"Frequency ({suffix})", color_discrete_sequence=['#000000'])
+    st.subheader("⏱️ MACRO_ROUNDED_DISTRIBUTION (10m)")
+    fig_bar = px.bar(df_subset, x='Rounded_Time', title=f"Frequency (10m Intervals) - {suffix}", 
+                     color_discrete_sequence=['#000000'])
     st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{suffix}")
 
     st.divider()
 
     c1, c2 = st.columns(2)
-    c3, c4, c5 = st.columns(3) # Added a 5th column for Target
+    c3, c4, c5 = st.columns(3)
     with c1: st.plotly_chart(px.pie(df_subset, names='entry_info', title="ENTRY_TYPE %", hole=0.4), use_container_width=True, key=f"pie1_{suffix}")
     with c2: st.plotly_chart(px.pie(df_subset, names='market', title="MARKET %", hole=0.4), use_container_width=True, key=f"pie2_{suffix}")
     with c3: st.plotly_chart(px.pie(df_subset, names='result', title="WIN_RATE %", hole=0.4, color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True, key=f"pie3_{suffix}")
@@ -136,7 +137,7 @@ with tabs[3]: render_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO']
 # --- TAB 5: HISTORY ---
 with tabs[4]:
     st.header("TRADE_HISTORY")
-    search_q = st.text_input("SEARCH_MARKET").upper()
+    search_q = st.text_input("SEARCH_BY_MARKET").upper()
     hist_df = all_trades.copy()
     if search_q: hist_df = hist_df[hist_df['market'].str.contains(search_q)]
     
@@ -148,7 +149,7 @@ with tabs[4]:
                 if edit_key not in st.session_state: st.session_state[edit_key] = False
                 
                 if not st.session_state[edit_key]:
-                    st.write(f"**Entry:** {row['entry_info']} | **Target:** {row['target']}")
+                    st.write(f"**Entry:** {row['entry_info']} | **Target:** {row['target']} | **Time:** {row['entry_time']}")
                     st.write(f"**RR:** {row['rr']}R | **Notes:** {row['notes']}")
                     ca, cb = st.columns(2)
                     if ca.button("✏️ EDIT", key=f"e_{row['id']}"): 
@@ -173,15 +174,18 @@ with tabs[4]:
 # --- TAB 6: COMPOUNDER ---
 with tabs[5]:
     st.header("COMPOUND_PROJECTOR")
-    p = st.number_input("INITIAL", value=5000)
-    r = st.number_input("MONTHLY_%", value=5.0)
-    y = st.number_input("YEARS", value=5)
-    months, bal = int(y * 12), p
+    c_col1, c_col2 = st.columns([1, 2])
+    with c_col1:
+        p_val = st.number_input("INITIAL", value=5000)
+        r_val = st.number_input("MONTHLY_%", value=5.0)
+        y_val = st.number_input("YEARS", value=5)
+    months, bal = int(y_val * 12), p_val
     data = []
     for m in range(1, months + 1):
-        bal *= (1 + (r / 100))
+        bal *= (1 + (r_val / 100))
         if m % 12 == 0: data.append({"Year": m//12, "Balance": round(bal, 2)})
-    st.line_chart(pd.DataFrame(data).set_index("Year"))
-    st.table(pd.DataFrame(data))
+    with c_col2:
+        st.line_chart(pd.DataFrame(data).set_index("Year"))
+        st.table(pd.DataFrame(data))
 
 conn.close()
