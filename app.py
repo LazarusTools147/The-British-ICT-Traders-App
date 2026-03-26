@@ -5,7 +5,7 @@ from datetime import datetime
 import sqlite3
 import re
 
-# --- 1. SETUP & DATABASE ---
+# --- 1. SETUP & DATABASE REPAIR ---
 st.set_page_config(page_title="TRADING_TERMINAL_V3", layout="wide")
 
 def init_db():
@@ -16,6 +16,13 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, type TEXT, market TEXT, 
                   entry_info TEXT, entry_time TEXT, result TEXT, risk_pc REAL, rr REAL, notes TEXT, 
                   date TEXT, screenshot BLOB)''')
+    
+    # RUTHLESS REPAIR: This forces the entry_time column to exist if the DB is old
+    try:
+        c.execute('ALTER TABLE trades ADD COLUMN entry_time TEXT')
+    except:
+        pass # If it's already there, do nothing
+        
     conn.commit()
     conn.close()
 
@@ -91,11 +98,11 @@ with tabs[1]:
 def render_analytics(df_subset, title):
     st.header(title)
     if df_subset.empty:
-        st.info("NO DATA.")
+        st.info("NO DATA LOGGED.")
         return
 
-    # --- THE BAR CHART LOGIC (THE TIME PARSER) ---
     def get_hour(t_str):
+        if not t_str: return "OTHER"
         match = re.search(r'(\d{1,2})', str(t_str))
         if match:
             h = int(match.group(1))
@@ -106,7 +113,8 @@ def render_analytics(df_subset, title):
     
     st.subheader("⏱️ SESSION_FREQUENCY (BY HOUR)")
     fig_bar = px.bar(df_subset, x='Hour_Slot', title="Entries per Hour Slot", 
-                     color_discrete_sequence=['#000000'], category_orders={"Hour_Slot": [f"{i:02d}:00" for i in range(24)] + ["OTHER"]})
+                     color_discrete_sequence=['#000000'], 
+                     category_orders={"Hour_Slot": [f"{i:02d}:00" for i in range(24)] + ["OTHER"]})
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.divider()
