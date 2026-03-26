@@ -98,7 +98,6 @@ def render_analytics(df_subset, title):
         st.info("NO DATA LOGGED.")
         return
 
-    # FIXED 24H TIME PARSER
     def get_hour_int(t_str):
         if not t_str: return None
         match = re.search(r'(\d{1,2})', str(t_str))
@@ -108,7 +107,6 @@ def render_analytics(df_subset, title):
 
     df_subset['hour'] = df_subset['entry_time'].apply(get_hour_int)
     
-    # Create the 24h Frequency Bar Chart
     st.subheader("⏱️ 24-HOUR TRADE DISTRIBUTION")
     time_counts = df_subset['hour'].value_counts().reindex(range(24), fill_value=0).reset_index()
     time_counts.columns = ['Hour', 'Frequency']
@@ -118,7 +116,6 @@ def render_analytics(df_subset, title):
                      title="Trade Frequency Across 24h Day",
                      labels={'Hour_Label': 'Time of Day', 'Frequency': 'Number of Trades'},
                      color_discrete_sequence=['#000000'])
-    fig_bar.update_xaxes(tickmode='linear')
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.divider()
@@ -139,7 +136,7 @@ with tabs[3]: render_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO']
 # --- TAB 5: HISTORY ---
 with tabs[4]:
     st.header("TRADE_HISTORY")
-    search_q = st.text_input("SEARCH_MARKET").upper()
+    search_q = st.text_input("SEARCH_BY_MARKET").upper()
     hist_df = all_trades.copy()
     if search_q: hist_df = hist_df[hist_df['market'].str.contains(search_q)]
     
@@ -174,4 +171,23 @@ with tabs[4]:
                 if row['screenshot']: st.image(row['screenshot'])
 
 # --- TAB 6: COMPOUNDER ---
-with tabs
+with tabs[5]:
+    st.header("COMPOUND_PROJECTOR")
+    c_col1, c_col2 = st.columns([1, 2])
+    with c_col1:
+        p_val = st.number_input("INITIAL", value=5000)
+        r_val = st.number_input("MONTHLY_%", value=5.0)
+        y_val = st.number_input("YEARS", value=5)
+    
+    months = int(y_val * 12)
+    bal = p_val
+    data = []
+    for m in range(1, months + 1):
+        bal *= (1 + (r_val / 100))
+        if m % 12 == 0: data.append({"Year": m//12, "Balance": round(bal, 2)})
+    
+    with c_col2:
+        st.line_chart(pd.DataFrame(data).set_index("Year"))
+        st.table(pd.DataFrame(data))
+
+conn.close()
