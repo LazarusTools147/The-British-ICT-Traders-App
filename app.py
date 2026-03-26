@@ -6,23 +6,22 @@ import sqlite3
 import re
 
 # --- 1. SETUP & DATABASE ---
-st.set_page_config(page_title="TRADING_TERMINAL_V4.4", layout="wide")
+st.set_page_config(page_title="TRADING_TERMINAL_V4.5", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
     c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS models (name TEXT PRIMARY KEY, logic TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS models (name TEXT PRIMARY KEY, logic TEXT, sessions TEXT)')
     c.execute('''CREATE TABLE IF NOT EXISTS trades 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, type TEXT, market TEXT, 
                   entry_info TEXT, entry_time TEXT, session TEXT, target TEXT, result TEXT, 
                   risk_pc REAL, rr REAL, notes TEXT, date TEXT, screenshot BLOB)''')
     
-    # Column update safety
-    for col in [('session', 'TEXT'), ('target', 'TEXT'), ('entry_time', 'TEXT')]:
+    # Update logic for new columns
+    for col in [('sessions', 'TEXT'), ('session', 'TEXT'), ('target', 'TEXT'), ('entry_time', 'TEXT')]:
         try:
             c.execute(f'ALTER TABLE trades ADD COLUMN {col[0]} {col[1]}')
-        except:
-            pass
+        except: pass
     conn.commit()
     conn.close()
 
@@ -41,6 +40,10 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
+if st.sidebar.button("🔒 LOGOUT"):
+    st.session_state.auth = False
+    st.rerun()
+
 # --- 3. TABS ---
 tabs = st.tabs(["🏗️ ARCHITECT", "🔥 THE_FORGE", "📊 LIVE_DATA", "🧪 TEST_DATA", "📅 HISTORY", "📈 COMPOUNDER"])
 
@@ -48,18 +51,20 @@ tabs = st.tabs(["🏗️ ARCHITECT", "🔥 THE_FORGE", "📊 LIVE_DATA", "🧪 T
 with tabs[0]:
     st.header("SYSTEM_DESIGN")
     m_name = st.text_input("MODEL_NAME").upper()
-    m_logic = st.text_area("MODEL_LOGIC_&_RULES", height=300)
+    m_sessions = st.multiselect("ALLOWED_SESSIONS", ["ASIA", "LONDON", "NY AM", "NY PM"])
+    m_logic = st.text_area("MODEL_LOGIC_&_RULES", height=250)
     if st.button("SAVE_MODEL"):
         if m_name:
             conn = sqlite3.connect('trading_vault.db')
-            conn.execute("INSERT OR REPLACE INTO models VALUES (?, ?)", (m_name, m_logic))
+            conn.execute("INSERT OR REPLACE INTO models VALUES (?, ?, ?)", (m_name, m_logic, ",".join(m_sessions)))
             conn.commit()
-            st.success("MODEL_ARCHIVED")
+            conn.close()
+            st.success(f"MODEL {m_name} ARCHIVED")
 
 # --- TAB 2: THE_FORGE ---
 with tabs[1]:
     conn = sqlite3.connect('trading_vault.db')
-    models_df = pd.read_sql("SELECT name FROM models", conn)
+    models_df = pd.read_sql("SELECT * FROM models", conn)
     models = models_df['name'].tolist()
     if not models:
         st.warning("CREATE A MODEL FIRST.")
@@ -72,9 +77,9 @@ with tabs[1]:
                 mod = st.selectbox("MODEL", models)
                 mkt = st.text_input("MARKET (NQ, OIL, ES)").upper()
                 ent_type = st.text_input("ENTRY_DETAILS (e.g. FVG + OB)")
-                ent_time = st.text_input("EXACT_TIME (e.g. 09:31)")
-                ent_sess = st.text_input("SESSION (e.g. LONDON, NY AM)").upper()
+                ent_time = st.text_input("EXACT_TIME (e.g. 03:45)")
             with c2:
+                ent_sess = st.text_input("SESSION (e.g. LONDON)").upper()
                 targ = st.text_input("TARGET").upper()
                 res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
                 rsk = st.number_input("RISK_%", value=1.0)
@@ -86,14 +91,16 @@ with tabs[1]:
             
             if st.form_submit_button("SAVE_ENTRY"):
                 if not mkt or not ent_type or not ent_time:
-                    st.error("MISSING DATA: Market, Entry Details, and Time are required.")
+                    st.error("MISSING DATA: Fill in Market, Details, and Time.")
                 else:
                     img_data = img.read() if img else None
+                    conn = sqlite3.connect('trading_vault.db')
                     conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, session, 
                                     target, result, risk_pc, rr, notes, date, screenshot) 
                                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                                  (mod, env, mkt, ent_type, ent_time, ent_sess, targ, res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), img_data))
                     conn.commit()
+                    conn.close()
                     st.success("DATA_SECURED")
 
 # --- TAB 3 & 4: ANALYTICS ---
@@ -102,16 +109,31 @@ def render_analytics(df_subset, suffix):
         st.info(f"NO DATA LOGGED FOR {suffix}.")
         return
 
-    # 1-MINUTE SORTING LOGIC
-    df_subset = df_subset.sort_values(by='entry_time')
+    def is_london_window(t_str):
+        match = re.search(r'(\d{1,2})', str(t_str))
+        if match:
+            h = int(match.group(1))
+            return 2 <= h <= 6
+        return False
 
-    st.subheader("⏱️ 1-MINUTE PRECISION PULSE")
-    fig_bar = px.bar(df_subset, x='entry_time', title=f"Trade Frequency (1m Precision) - {suffix}", 
-                     color_discrete_sequence=['#000000'])
+    london_df = df_subset[df_subset['entry_time'].apply(is_london_window)].copy()
     
-    # RUTHLESS UI: Make bars thin and gap wider
-    fig_bar.update_layout(bargap=0.6) 
-    st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{suffix}")
+    st.subheader("⏱️ LONDON_SESSION_PULSE (02:00 - 06:00 NY)")
+    if london_df.empty:
+        st.write("No trades logged within the 2 AM - 6 AM window.")
+    else:
+        london_df['Hour_Group'] = london_df['entry_time'].apply(lambda x: f"{re.search(r'(\d{1,2})', str(x)).group(1)}:00")
+        london_df = london_df.sort_values(by='entry_time')
+        
+        # Professional Color Mapping
+        color_map = {"2:00": "#1f77b4", "3:00": "#ff7f0e", "4:00": "#2ca02c", "5:00": "#d62728", "6:00": "#9467bd"}
+        
+        fig_bar = px.bar(london_df, x='entry_time', color='Hour_Group',
+                         title=f"London Pulse (1m) - {suffix}",
+                         color_discrete_map=color_map,
+                         category_orders={"Hour_Group": ["2:00", "3:00", "4:00", "5:00", "6:00"]})
+        fig_bar.update_layout(bargap=0.7)
+        st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{suffix}")
 
     st.divider()
 
@@ -150,15 +172,19 @@ with tabs[4]:
                     ca, cb = st.columns(2)
                     if ca.button("✏️ EDIT", key=f"e_{row['id']}"): st.session_state[edit_key] = True; st.rerun()
                     if cb.button("🗑️ DELETE", key=f"d_{row['id']}"):
+                        conn = sqlite3.connect('trading_vault.db')
                         conn.execute("DELETE FROM trades WHERE id=?", (row['id'],))
-                        conn.commit(); st.rerun()
+                        conn.commit()
+                        st.rerun()
                 else:
                     n_sess = st.text_input("Session", row['session'], key=f"ns_{row['id']}")
                     n_time = st.text_input("Time", row['entry_time'], key=f"ntime_{row['id']}")
                     n_ent = st.text_input("Details", row['entry_info'], key=f"ne_{row['id']}")
                     if st.button("SAVE", key=f"s_{row['id']}"):
+                        conn = sqlite3.connect('trading_vault.db')
                         conn.execute("UPDATE trades SET session=?, entry_time=?, entry_info=? WHERE id=?", (n_sess.upper(), n_time, n_ent, row['id']))
-                        conn.commit(); st.session_state[edit_key] = False; st.rerun()
+                        conn.commit()
+                        st.session_state[edit_key] = False; st.rerun()
             with col2:
                 if row['screenshot']: st.image(row['screenshot'])
 
