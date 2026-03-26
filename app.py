@@ -16,13 +16,10 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, type TEXT, market TEXT, 
                   entry_info TEXT, entry_time TEXT, result TEXT, risk_pc REAL, rr REAL, notes TEXT, 
                   date TEXT, screenshot BLOB)''')
-    
-    # RUTHLESS REPAIR: This forces the entry_time column to exist if the DB is old
     try:
         c.execute('ALTER TABLE trades ADD COLUMN entry_time TEXT')
     except:
-        pass # If it's already there, do nothing
-        
+        pass
     conn.commit()
     conn.close()
 
@@ -76,7 +73,7 @@ with tabs[1]:
                 mod = st.selectbox("MODEL", models)
                 mkt = st.text_input("MARKET (NQ, OIL, ES)").upper()
                 ent_type = st.text_input("ENTRY_DETAILS (e.g. FVG + OB)")
-                ent_time = st.text_input("ENTRY_TIME (e.g. 09:30 or LONDON)")
+                ent_time = st.text_input("ENTRY_TIME (e.g. 08:30 or 14:15)")
             with c2:
                 res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
                 rsk = st.number_input("RISK_%", step=0.1, value=1.0)
@@ -101,20 +98,27 @@ def render_analytics(df_subset, title):
         st.info("NO DATA LOGGED.")
         return
 
-    def get_hour(t_str):
-        if not t_str: return "OTHER"
+    # FIXED 24H TIME PARSER
+    def get_hour_int(t_str):
+        if not t_str: return None
         match = re.search(r'(\d{1,2})', str(t_str))
         if match:
-            h = int(match.group(1))
-            return f"{h:02d}:00"
-        return "OTHER"
+            return int(match.group(1))
+        return None
 
-    df_subset['Hour_Slot'] = df_subset['entry_time'].apply(get_hour)
+    df_subset['hour'] = df_subset['entry_time'].apply(get_hour_int)
     
-    st.subheader("⏱️ SESSION_FREQUENCY (BY HOUR)")
-    fig_bar = px.bar(df_subset, x='Hour_Slot', title="Entries per Hour Slot", 
-                     color_discrete_sequence=['#000000'], 
-                     category_orders={"Hour_Slot": [f"{i:02d}:00" for i in range(24)] + ["OTHER"]})
+    # Create the 24h Frequency Bar Chart
+    st.subheader("⏱️ 24-HOUR TRADE DISTRIBUTION")
+    time_counts = df_subset['hour'].value_counts().reindex(range(24), fill_value=0).reset_index()
+    time_counts.columns = ['Hour', 'Frequency']
+    time_counts['Hour_Label'] = time_counts['Hour'].apply(lambda x: f"{x:02d}:00")
+
+    fig_bar = px.bar(time_counts, x='Hour_Label', y='Frequency', 
+                     title="Trade Frequency Across 24h Day",
+                     labels={'Hour_Label': 'Time of Day', 'Frequency': 'Number of Trades'},
+                     color_discrete_sequence=['#000000'])
+    fig_bar.update_xaxes(tickmode='linear')
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.divider()
@@ -124,7 +128,7 @@ def render_analytics(df_subset, title):
     with c1: st.plotly_chart(px.pie(df_subset, names='entry_info', title="ENTRY_TYPE_%", hole=0.4), use_container_width=True)
     with c2: st.plotly_chart(px.pie(df_subset, names='market', title="MARKET_%", hole=0.4), use_container_width=True)
     with c3: st.plotly_chart(px.pie(df_subset, names='result', title="WIN_RATE_%", hole=0.4, color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True)
-    with c4: st.plotly_chart(px.pie(df_subset, names='entry_time', title="ALL_SESSIONS_%", hole=0.4), use_container_width=True)
+    with c4: st.plotly_chart(px.pie(df_subset, names='entry_time', title="ALL_TIME_ENTRIES_%", hole=0.4), use_container_width=True)
 
 conn = sqlite3.connect('trading_vault.db')
 all_trades = pd.read_sql("SELECT * FROM trades", conn)
@@ -170,18 +174,4 @@ with tabs[4]:
                 if row['screenshot']: st.image(row['screenshot'])
 
 # --- TAB 6: COMPOUNDER ---
-with tabs[5]:
-    st.header("COMPOUND_PROJECTOR")
-    p = st.number_input("INITIAL", value=5000)
-    r = st.number_input("MONTHLY_%", value=5.0)
-    y = st.number_input("YEARS", value=5)
-    months = int(y * 12)
-    bal = p
-    data = []
-    for m in range(1, months + 1):
-        bal *= (1 + (r / 100))
-        if m % 12 == 0: data.append({"Year": m//12, "Balance": round(bal, 2)})
-    st.line_chart(pd.DataFrame(data).set_index("Year"))
-    st.table(pd.DataFrame(data))
-
-conn.close()
+with tabs
