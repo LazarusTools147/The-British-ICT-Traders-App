@@ -6,7 +6,7 @@ import sqlite3
 import re
 
 # --- 1. SETUP & DATABASE REPAIR ---
-st.set_page_config(page_title="ICT_MASTER_TERMINAL_V6.3", layout="wide")
+st.set_page_config(page_title="ICT_MASTER_TERMINAL_V6.4", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -18,7 +18,6 @@ def init_db():
                   risk_pc REAL, rr REAL, notes TEXT, date TEXT, duration_mins INTEGER, 
                   news_impact TEXT, screenshot BLOB)''')
     
-    # Ensure all columns exist across database versions
     cols = [('duration_mins', 'INTEGER'), ('news_impact', 'TEXT'), ('session', 'TEXT'), ('target', 'TEXT'), ('sessions', 'TEXT'), ('entry_tf', 'TEXT')]
     for col_name, col_type in cols:
         try: c.execute(f'ALTER TABLE trades ADD COLUMN {col_name} {col_type}')
@@ -108,12 +107,13 @@ with tabs[1]:
                     conn.commit(); conn.close()
                     st.success("DATA SECURED")
 
-# --- 4. ANALYTICS ENGINE (v6.3 High-Symmetry Layout) ---
+# --- 4. ANALYTICS ENGINE (v6.4 Symmetrical Layout + Orange BE) ---
 def render_kpi_analytics(df_all, suffix):
     if df_all.empty:
         st.info(f"NO DATA FOR {suffix}.")
         return
 
+    # --- TOP ROW: GLOBAL KPI ---
     st.markdown("## 📈 GLOBAL PERFORMANCE KPI")
     k1, k2, k3, k4 = st.columns(4)
     with k1: st.metric("GLOBAL WIN RATE", f"{round((len(df_all[df_all['result']=='WIN']) / len(df_all)) * 100, 1)}%")
@@ -123,15 +123,19 @@ def render_kpi_analytics(df_all, suffix):
 
     st.divider()
     
+    # --- MASTER VISUALS (ORANGE BE INTEGRATED) ---
     kpi1, kpi2 = st.columns([3, 1])
+    # Map colors: WIN=Green, LOSS=Red, BE=Orange
+    res_colors = {'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#FFA500'}
+    
     with kpi1:
         df_all = df_all.sort_values('entry_time')
         fig_main = px.bar(df_all, x='entry_time', y='rr', color='result', title="Performance Pulse (RR over Time)",
-                         color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'})
+                         color_discrete_map=res_colors)
         fig_main.update_layout(bargap=0.3); st.plotly_chart(fig_main, use_container_width=True)
     with kpi2:
         st.plotly_chart(px.pie(df_all, names='result', title="WIN_RATE PIE", hole=0.5,
-                              color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True)
+                              color='result', color_discrete_map=res_colors), use_container_width=True)
 
     st.divider()
 
@@ -140,6 +144,7 @@ def render_kpi_analytics(df_all, suffix):
         sub_df = df_all[df_all['result'] == res_type].copy()
         if sub_df.empty: return
         
+        # All sections now have expanders (WIN is expanded by default)
         with st.expander(f"{emoji} {label} DEEP-DIVE ANALYSIS", expanded=(res_type == "WIN")):
             sk1, sk2 = st.columns([3, 1])
             with sk1:
