@@ -6,7 +6,7 @@ import sqlite3
 import re
 
 # --- 1. SETUP & DATABASE REPAIR ---
-st.set_page_config(page_title="ICT_MASTER_TERMINAL_V6.2", layout="wide")
+st.set_page_config(page_title="ICT_MASTER_TERMINAL_V6.3", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -18,7 +18,7 @@ def init_db():
                   risk_pc REAL, rr REAL, notes TEXT, date TEXT, duration_mins INTEGER, 
                   news_impact TEXT, screenshot BLOB)''')
     
-    # Ensure all columns exist for data consistency
+    # Ensure all columns exist across database versions
     cols = [('duration_mins', 'INTEGER'), ('news_impact', 'TEXT'), ('session', 'TEXT'), ('target', 'TEXT'), ('sessions', 'TEXT'), ('entry_tf', 'TEXT')]
     for col_name, col_type in cols:
         try: c.execute(f'ALTER TABLE trades ADD COLUMN {col_name} {col_type}')
@@ -108,7 +108,7 @@ with tabs[1]:
                     conn.commit(); conn.close()
                     st.success("DATA SECURED")
 
-# --- 4. ANALYTICS ENGINE (The High-KPI Layout) ---
+# --- 4. ANALYTICS ENGINE (v6.3 High-Symmetry Layout) ---
 def render_kpi_analytics(df_all, suffix):
     if df_all.empty:
         st.info(f"NO DATA FOR {suffix}.")
@@ -117,7 +117,7 @@ def render_kpi_analytics(df_all, suffix):
     st.markdown("## 📈 GLOBAL PERFORMANCE KPI")
     k1, k2, k3, k4 = st.columns(4)
     with k1: st.metric("GLOBAL WIN RATE", f"{round((len(df_all[df_all['result']=='WIN']) / len(df_all)) * 100, 1)}%")
-    with k2: st.metric("AVG DURATION", f"{round(df_all['duration_mins'].mean(), 1)}m")
+    with k2: st.metric("GLOBAL AVG DURATION", f"{round(df_all['duration_mins'].mean(), 1)}m")
     with k3: st.metric("AVG RISK PER TRADE", f"{round(df_all['risk_pc'].mean(), 2)}%")
     with k4: st.metric("AVG RR RATIO", f"{round(df_all['rr'].mean(), 2)}R")
 
@@ -129,42 +129,45 @@ def render_kpi_analytics(df_all, suffix):
         fig_main = px.bar(df_all, x='entry_time', y='rr', color='result', title="Performance Pulse (RR over Time)",
                          color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'})
         fig_main.update_layout(bargap=0.3); st.plotly_chart(fig_main, use_container_width=True)
-
     with kpi2:
         st.plotly_chart(px.pie(df_all, names='result', title="WIN_RATE PIE", hole=0.5,
                               color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True)
 
     st.divider()
 
-    results = df_all['result'].unique()
-    for res_type in results:
+    # SECTION GENERATOR (WIN, LOSS, BE)
+    def draw_segmented_section(res_type, label, emoji, sfx):
         sub_df = df_all[df_all['result'] == res_type].copy()
-        st.markdown(f"### {res_type} ANALYSIS")
+        if sub_df.empty: return
         
-        sk1, sk2 = st.columns([3, 1])
-        with sk1:
-            def get_macro(t):
-                m = re.search(r'(\d{1,2})[:.]?(\d{2})', str(t))
-                if not m: return "OTHER"
-                h, mn = int(m.group(1)), int(m.group(2))
-                if (h==2 and mn>=50) or (h==3 and mn<=10) or (h==3 and mn>=50) or (h==4 and mn<=10) or (h==4 and mn>=50) or (h==5 and mn<=10): return "MACRO"
-                return f"{h:02d}:00"
-            sub_df['Cat'] = sub_df['entry_time'].apply(get_macro)
-            fig_sub = px.bar(sub_df.sort_values('entry_time'), x='entry_time', color='Cat', title=f"{res_type} Precision Pulse", color_discrete_map={"MACRO":"#FFD700"})
-            st.plotly_chart(fig_sub, use_container_width=True, key=f"bar_{res_type}_{suffix}")
-        
-        with sk2:
-            st.metric(f"AVG {res_type} TIME", f"{round(sub_df['duration_mins'].mean(), 1)}m")
-            st.plotly_chart(px.pie(sub_df, names='entry_info', title="Entry Types", hole=0.4), use_container_width=True, key=f"p_ent_{res_type}_{suffix}")
+        with st.expander(f"{emoji} {label} DEEP-DIVE ANALYSIS", expanded=(res_type == "WIN")):
+            sk1, sk2 = st.columns([3, 1])
+            with sk1:
+                def get_macro(t):
+                    m = re.search(r'(\d{1,2})[:.]?(\d{2})', str(t))
+                    if not m: return "OTHER"
+                    h, mn = int(m.group(1)), int(m.group(2))
+                    if (h==2 and mn>=50) or (h==3 and mn<=10) or (h==3 and mn>=50) or (h==4 and mn<=10) or (h==4 and mn>=50) or (h==5 and mn<=10): return "MACRO"
+                    return f"{h:02d}:00"
+                sub_df['Cat'] = sub_df['entry_time'].apply(get_macro)
+                fig_sub = px.bar(sub_df.sort_values('entry_time'), x='entry_time', color='Cat', title=f"{label} Precision Pulse", color_discrete_map={"MACRO":"#FFD700"})
+                st.plotly_chart(fig_sub, use_container_width=True, key=f"bar_{res_type}_{sfx}")
+            
+            with sk2:
+                st.metric(f"AVG {label} TIME", f"{round(sub_df['duration_mins'].mean(), 1)}m")
+                st.plotly_chart(px.pie(sub_df, names='entry_info', title="Entry Types", hole=0.4), use_container_width=True, key=f"p_ent_{res_type}_{sfx}")
 
-        p1, p2, p3, p4, p5 = st.columns(5)
-        pie_args = dict(hole=0.4, width=250, height=250)
-        with p1: st.plotly_chart(px.pie(sub_df, names='market', title="Markets", **pie_args), use_container_width=True, key=f"m_{res_type}_{suffix}")
-        with p2: st.plotly_chart(px.pie(sub_df, names='session', title="Sessions", **pie_args), use_container_width=True, key=f"s_{res_type}_{suffix}")
-        with p3: st.plotly_chart(px.pie(sub_df, names='target', title="Targets", **pie_args), use_container_width=True, key=f"t_{res_type}_{suffix}")
-        with p4: st.plotly_chart(px.pie(sub_df, names='news_impact', title="News", **pie_args), use_container_width=True, key=f"n_{res_type}_{suffix}")
-        with p5: st.plotly_chart(px.pie(sub_df, names='entry_tf', title="Timeframes", **pie_args), use_container_width=True, key=f"tf_{res_type}_{suffix}")
-        st.divider()
+            p1, p2, p3, p4, p5 = st.columns(5)
+            pie_args = dict(hole=0.4, width=250, height=250)
+            with p1: st.plotly_chart(px.pie(sub_df, names='market', title="Markets", **pie_args), use_container_width=True, key=f"m_{res_type}_{sfx}")
+            with p2: st.plotly_chart(px.pie(sub_df, names='session', title="Sessions", **pie_args), use_container_width=True, key=f"s_{res_type}_{sfx}")
+            with p3: st.plotly_chart(px.pie(sub_df, names='target', title="Targets", **pie_args), use_container_width=True, key=f"t_{res_type}_{sfx}")
+            with p4: st.plotly_chart(px.pie(sub_df, names='news_impact', title="News", **pie_args), use_container_width=True, key=f"n_{res_type}_{sfx}")
+            with p5: st.plotly_chart(px.pie(sub_df, names='entry_tf', title="Timeframes", **pie_args), use_container_width=True, key=f"tf_{res_type}_{sfx}")
+
+    draw_segmented_section("WIN", "WINNERS' CIRCLE", "🏆", suffix)
+    draw_segmented_section("BE", "BREAK EVEN DEFENSE", "🛡️", suffix)
+    draw_segmented_section("LOSS", "LOSS AUTOPSY", "💀", suffix)
 
 conn = sqlite3.connect('trading_vault.db')
 all_trades = pd.read_sql("SELECT * FROM trades", conn)
@@ -189,10 +192,12 @@ with tabs[4]:
 # --- TAB 6: COMPOUNDER ---
 with tabs[5]:
     st.header("COMPOUNDER")
-    p, r, y = st.number_input("START", 5000), st.number_input("%/MO", 5.0), st.number_input("YRS", 5)
+    p, r, y = st.number_input("STARTING BALANCE", 5000), st.number_input("MONTHLY %", 5.0), st.number_input("YEARS", 5)
     bal, data = p, []
     for m in range(1, int(y*12)+1):
         bal *= (1 + (r/100))
         if m%12==0: data.append({"Year": m//12, "Balance": round(bal, 2)})
     st.line_chart(pd.DataFrame(data).set_index("Year"))
+    st.table(pd.DataFrame(data))
+
 conn.close()
