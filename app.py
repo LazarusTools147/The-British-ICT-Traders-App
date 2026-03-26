@@ -6,7 +6,7 @@ import sqlite3
 import re
 
 # --- 1. SETUP & DATABASE REPAIR ---
-st.set_page_config(page_title="TRADING_TERMINAL_V3", layout="wide")
+st.set_page_config(page_title="TRADING_TERMINAL_V4", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -14,12 +14,14 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS models (name TEXT PRIMARY KEY, logic TEXT)')
     c.execute('''CREATE TABLE IF NOT EXISTS trades 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, type TEXT, market TEXT, 
-                  entry_info TEXT, entry_time TEXT, result TEXT, risk_pc REAL, rr REAL, notes TEXT, 
-                  date TEXT, screenshot BLOB)''')
-    try:
-        c.execute('ALTER TABLE trades ADD COLUMN entry_time TEXT')
-    except:
-        pass
+                  entry_info TEXT, entry_time TEXT, target TEXT, result TEXT, risk_pc REAL, rr REAL, 
+                  notes TEXT, date TEXT, screenshot BLOB)''')
+    # Force columns to exist if they were missed in previous versions
+    for col in [('entry_time', 'TEXT'), ('target', 'TEXT')]:
+        try:
+            c.execute(f'ALTER TABLE trades ADD COLUMN {col[0]} {col[1]}')
+        except:
+            pass
     conn.commit()
     conn.close()
 
@@ -73,8 +75,9 @@ with tabs[1]:
                 mod = st.selectbox("MODEL", models)
                 mkt = st.text_input("MARKET (NQ, OIL, ES)").upper()
                 ent_type = st.text_input("ENTRY_DETAILS (e.g. FVG + OB)")
-                ent_time = st.text_input("ENTRY_TIME (e.g. 08:30 or 14:15)")
+                ent_time = st.text_input("ENTRY_TIME (e.g. 08:30 or LONDON)")
             with c2:
+                targ = st.text_input("TARGET (e.g. BSL, SSL, 2R)")
                 res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
                 rsk = st.number_input("RISK_%", step=0.1, value=1.0)
                 rvr = st.number_input("RR_RESULT", step=0.1, value=2.0)
@@ -84,59 +87,56 @@ with tabs[1]:
             img = st.file_uploader("UPLOAD_CHART", type=['png', 'jpg', 'jpeg'])
             
             if st.form_submit_button("SAVE_ENTRY"):
-                img_data = img.read() if img else None
-                conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, result, 
-                                risk_pc, rr, notes, date, screenshot) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
-                             (mod, env, mkt, ent_type, ent_time.upper(), res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), img_data))
-                conn.commit()
-                st.success("DATA_SECURED")
+                # RUTHLESS CHECK: Stop errors before they happen
+                if not mkt or not ent_type or not ent_time:
+                    st.error("MISSING DATA: Please fill in Market, Entry Details, and Time.")
+                else:
+                    img_data = img.read() if img else None
+                    conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, target, 
+                                    result, risk_pc, rr, notes, date, screenshot) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                 (mod, env, mkt, ent_type, ent_time.upper(), targ.upper(), res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), img_data))
+                    conn.commit()
+                    st.success("DATA_SECURED")
 
 # --- TAB 3 & 4: ANALYTICS ---
-def render_analytics(df_subset, title):
-    st.header(title)
+def render_analytics(df_subset, suffix):
     if df_subset.empty:
-        st.info("NO DATA LOGGED.")
+        st.info(f"NO DATA LOGGED FOR {suffix}.")
         return
 
     def get_hour_int(t_str):
-        if not t_str: return None
         match = re.search(r'(\d{1,2})', str(t_str))
-        if match:
-            return int(match.group(1))
-        return None
+        return int(match.group(1)) if match else None
 
     df_subset['hour'] = df_subset['entry_time'].apply(get_hour_int)
-    
-    st.subheader("⏱️ 24-HOUR TRADE DISTRIBUTION")
     time_counts = df_subset['hour'].value_counts().reindex(range(24), fill_value=0).reset_index()
     time_counts.columns = ['Hour', 'Frequency']
     time_counts['Hour_Label'] = time_counts['Hour'].apply(lambda x: f"{x:02d}:00")
 
-    fig_bar = px.bar(time_counts, x='Hour_Label', y='Frequency', 
-                     title="Trade Frequency Across 24h Day",
-                     labels={'Hour_Label': 'Time of Day', 'Frequency': 'Number of Trades'},
-                     color_discrete_sequence=['#000000'])
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.subheader("⏱️ 24-HOUR DISTRIBUTION")
+    fig_bar = px.bar(time_counts, x='Hour_Label', y='Frequency', title=f"Frequency ({suffix})", color_discrete_sequence=['#000000'])
+    st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{suffix}")
 
     st.divider()
 
     c1, c2 = st.columns(2)
-    c3, c4 = st.columns(2)
-    with c1: st.plotly_chart(px.pie(df_subset, names='entry_info', title="ENTRY_TYPE_%", hole=0.4), use_container_width=True)
-    with c2: st.plotly_chart(px.pie(df_subset, names='market', title="MARKET_%", hole=0.4), use_container_width=True)
-    with c3: st.plotly_chart(px.pie(df_subset, names='result', title="WIN_RATE_%", hole=0.4, color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True)
-    with c4: st.plotly_chart(px.pie(df_subset, names='entry_time', title="ALL_TIME_ENTRIES_%", hole=0.4), use_container_width=True)
+    c3, c4, c5 = st.columns(3) # Added a 5th column for Target
+    with c1: st.plotly_chart(px.pie(df_subset, names='entry_info', title="ENTRY_TYPE %", hole=0.4), use_container_width=True, key=f"pie1_{suffix}")
+    with c2: st.plotly_chart(px.pie(df_subset, names='market', title="MARKET %", hole=0.4), use_container_width=True, key=f"pie2_{suffix}")
+    with c3: st.plotly_chart(px.pie(df_subset, names='result', title="WIN_RATE %", hole=0.4, color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True, key=f"pie3_{suffix}")
+    with c4: st.plotly_chart(px.pie(df_subset, names='entry_time', title="SESSIONS %", hole=0.4), use_container_width=True, key=f"pie4_{suffix}")
+    with c5: st.plotly_chart(px.pie(df_subset, names='target', title="TARGETS %", hole=0.4), use_container_width=True, key=f"pie5_{suffix}")
 
 conn = sqlite3.connect('trading_vault.db')
 all_trades = pd.read_sql("SELECT * FROM trades", conn)
 
-with tabs[2]: render_analytics(all_trades[all_trades['type'] == 'LIVE'], "LIVE_PERFORMANCE")
-with tabs[3]: render_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO'], "TEST_PERFORMANCE")
+with tabs[2]: render_analytics(all_trades[all_trades['type'] == 'LIVE'], "LIVE")
+with tabs[3]: render_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO'], "TEST")
 
 # --- TAB 5: HISTORY ---
 with tabs[4]:
     st.header("TRADE_HISTORY")
-    search_q = st.text_input("SEARCH_BY_MARKET").upper()
+    search_q = st.text_input("SEARCH_MARKET").upper()
     hist_df = all_trades.copy()
     if search_q: hist_df = hist_df[hist_df['market'].str.contains(search_q)]
     
@@ -148,7 +148,7 @@ with tabs[4]:
                 if edit_key not in st.session_state: st.session_state[edit_key] = False
                 
                 if not st.session_state[edit_key]:
-                    st.write(f"**Entry:** {row['entry_info']} | **Time:** {row['entry_time']}")
+                    st.write(f"**Entry:** {row['entry_info']} | **Target:** {row['target']}")
                     st.write(f"**RR:** {row['rr']}R | **Notes:** {row['notes']}")
                     ca, cb = st.columns(2)
                     if ca.button("✏️ EDIT", key=f"e_{row['id']}"): 
@@ -160,10 +160,10 @@ with tabs[4]:
                         st.rerun()
                 else:
                     n_ent = st.text_input("Details", row['entry_info'], key=f"ne_{row['id']}")
+                    n_targ = st.text_input("Target", row['target'], key=f"ntar_{row['id']}")
                     n_time = st.text_input("Time", row['entry_time'], key=f"nt_{row['id']}")
-                    n_rr = st.number_input("RR", value=float(row['rr']), key=f"nr_{row['id']}")
-                    if st.button("SAVE", key=f"s_{row['id']}"):
-                        conn.execute("UPDATE trades SET entry_info=?, entry_time=?, rr=? WHERE id=?", (n_ent, n_time.upper(), n_rr, row['id']))
+                    if st.button("SAVE CHANGES", key=f"s_{row['id']}"):
+                        conn.execute("UPDATE trades SET entry_info=?, target=?, entry_time=? WHERE id=?", (n_ent, n_targ.upper(), n_time.upper(), row['id']))
                         conn.commit()
                         st.session_state[edit_key] = False
                         st.rerun()
@@ -173,21 +173,15 @@ with tabs[4]:
 # --- TAB 6: COMPOUNDER ---
 with tabs[5]:
     st.header("COMPOUND_PROJECTOR")
-    c_col1, c_col2 = st.columns([1, 2])
-    with c_col1:
-        p_val = st.number_input("INITIAL", value=5000)
-        r_val = st.number_input("MONTHLY_%", value=5.0)
-        y_val = st.number_input("YEARS", value=5)
-    
-    months = int(y_val * 12)
-    bal = p_val
+    p = st.number_input("INITIAL", value=5000)
+    r = st.number_input("MONTHLY_%", value=5.0)
+    y = st.number_input("YEARS", value=5)
+    months, bal = int(y * 12), p
     data = []
     for m in range(1, months + 1):
-        bal *= (1 + (r_val / 100))
+        bal *= (1 + (r / 100))
         if m % 12 == 0: data.append({"Year": m//12, "Balance": round(bal, 2)})
-    
-    with c_col2:
-        st.line_chart(pd.DataFrame(data).set_index("Year"))
-        st.table(pd.DataFrame(data))
+    st.line_chart(pd.DataFrame(data).set_index("Year"))
+    st.table(pd.DataFrame(data))
 
 conn.close()
