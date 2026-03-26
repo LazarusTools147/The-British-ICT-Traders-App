@@ -5,23 +5,38 @@ from datetime import datetime
 import sqlite3
 import re
 
-# --- 1. SETUP & DATABASE ---
-st.set_page_config(page_title="TRADING_TERMINAL_V4.5", layout="wide")
+# --- 1. SETUP & DATABASE REPAIR ---
+st.set_page_config(page_title="ICT_PRECISION_TERMINAL_V5.3", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
     c = conn.cursor()
+    # Ensure all tables exist
     c.execute('CREATE TABLE IF NOT EXISTS models (name TEXT PRIMARY KEY, logic TEXT, sessions TEXT)')
     c.execute('''CREATE TABLE IF NOT EXISTS trades 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, model_name TEXT, type TEXT, market TEXT, 
                   entry_info TEXT, entry_time TEXT, session TEXT, target TEXT, result TEXT, 
-                  risk_pc REAL, rr REAL, notes TEXT, date TEXT, screenshot BLOB)''')
+                  risk_pc REAL, rr REAL, notes TEXT, date TEXT, duration_mins INTEGER, 
+                  news_impact TEXT, screenshot BLOB)''')
     
-    # Update logic for new columns
-    for col in [('sessions', 'TEXT'), ('session', 'TEXT'), ('target', 'TEXT'), ('entry_time', 'TEXT')]:
+    # RUTHLESS REPAIR: Ensure all columns exist for old databases
+    cols_to_check = [
+        ('duration_mins', 'INTEGER'), 
+        ('news_impact', 'TEXT'), 
+        ('session', 'TEXT'), 
+        ('target', 'TEXT'), 
+        ('sessions', 'TEXT')
+    ]
+    for col_name, col_type in cols_to_check:
         try:
-            c.execute(f'ALTER TABLE trades ADD COLUMN {col[0]} {col[1]}')
-        except: pass
+            c.execute(f'ALTER TABLE trades ADD COLUMN {col_name} {col_type}')
+        except:
+            pass
+    try:
+        c.execute(f'ALTER TABLE models ADD COLUMN sessions TEXT')
+    except:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -71,16 +86,19 @@ with tabs[1]:
     else:
         st.header("ENTRY_STATION")
         with st.form("log_form", clear_on_submit=True):
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
                 env = st.radio("ENVIRONMENT", ["LIVE", "BACKTEST/DEMO"], horizontal=True)
                 mod = st.selectbox("MODEL", models)
                 mkt = st.text_input("MARKET (NQ, OIL, ES)").upper()
                 ent_type = st.text_input("ENTRY_DETAILS (e.g. FVG + OB)")
-                ent_time = st.text_input("EXACT_TIME (e.g. 03:45)")
             with c2:
+                ent_time = st.text_input("EXACT_TIME (e.g. 03:45)")
                 ent_sess = st.text_input("SESSION (e.g. LONDON)").upper()
-                targ = st.text_input("TARGET").upper()
+                dur = st.number_input("DURATION (MINS)", min_value=1, value=15)
+                news = st.selectbox("NEWS_IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH (RED)"])
+            with c3:
+                targ = st.text_input("TARGET (e.g. BSL)").upper()
                 res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
                 rsk = st.number_input("RISK_%", value=1.0)
                 rvr = st.number_input("RR_RESULT", value=2.0)
@@ -91,65 +109,97 @@ with tabs[1]:
             
             if st.form_submit_button("SAVE_ENTRY"):
                 if not mkt or not ent_type or not ent_time:
-                    st.error("MISSING DATA: Fill in Market, Details, and Time.")
+                    st.error("MISSING DATA: Market, Details, and Time are required.")
                 else:
                     img_data = img.read() if img else None
                     conn = sqlite3.connect('trading_vault.db')
                     conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, session, 
-                                    target, result, risk_pc, rr, notes, date, screenshot) 
-                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                                 (mod, env, mkt, ent_type, ent_time, ent_sess, targ, res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), img_data))
+                                    target, result, risk_pc, rr, notes, date, duration_mins, news_impact, screenshot) 
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                 (mod, env, mkt, ent_type, ent_time, ent_sess, targ, res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), dur, news, img_data))
                     conn.commit()
                     conn.close()
                     st.success("DATA_SECURED")
 
-# --- TAB 3 & 4: ANALYTICS ---
-def render_analytics(df_subset, suffix):
-    if df_subset.empty:
+# --- TAB 3 & 4: SEGMENTED ANALYTICS ---
+def render_segmented_analytics(df_all, suffix):
+    if df_all.empty:
         st.info(f"NO DATA LOGGED FOR {suffix}.")
         return
 
-    def is_london_window(t_str):
-        match = re.search(r'(\d{1,2})', str(t_str))
-        if match:
-            h = int(match.group(1))
-            return 2 <= h <= 6
-        return False
+    def get_color_cat(t_str):
+        m = re.search(r'(\d{1,2})[:.]?(\d{2})', str(t_str))
+        if not m: return "OTHER"
+        h, mins = int(m.group(1)), int(m.group(2))
+        # Highlight London Macros: 2:50-3:10, 3:50-4:10, 4:50-5:10
+        if (h == 2 and mins >= 50) or (h == 3 and mins <= 10) or \
+           (h == 3 and mins >= 50) or (h == 4 and mins <= 10) or \
+           (h == 4 and mins >= 50) or (h == 5 and mins <= 10):
+            return "GOLD_MACRO"
+        return f"{h:02d}:00 Hour"
 
-    london_df = df_subset[df_subset['entry_time'].apply(is_london_window)].copy()
-    
-    st.subheader("⏱️ LONDON_SESSION_PULSE (02:00 - 06:00 NY)")
-    if london_df.empty:
-        st.write("No trades logged within the 2 AM - 6 AM window.")
+    # Split Data
+    wins_df = df_all[df_all['result'] == 'WIN'].copy()
+    loss_df = df_all[df_all['result'] == 'LOSS'].copy()
+    be_df = df_all[df_all['result'] == 'BE'].copy()
+
+    color_map = {"GOLD_MACRO": "#FFD700", "02:00 Hour": "#1f77b4", "03:00 Hour": "#ff7f0e", 
+                 "04:00 Hour": "#2ca02c", "05:00 Hour": "#d62728", "06:00 Hour": "#9467bd"}
+
+    # --- WINS ---
+    st.markdown("### 🏆 THE WINNERS' CIRCLE")
+    if wins_df.empty: st.write("No wins recorded yet.")
     else:
-        london_df['Hour_Group'] = london_df['entry_time'].apply(lambda x: f"{re.search(r'(\d{1,2})', str(x)).group(1)}:00")
-        london_df = london_df.sort_values(by='entry_time')
-        
-        # Professional Color Mapping
-        color_map = {"2:00": "#1f77b4", "3:00": "#ff7f0e", "4:00": "#2ca02c", "5:00": "#d62728", "6:00": "#9467bd"}
-        
-        fig_bar = px.bar(london_df, x='entry_time', color='Hour_Group',
-                         title=f"London Pulse (1m) - {suffix}",
-                         color_discrete_map=color_map,
-                         category_orders={"Hour_Group": ["2:00", "3:00", "4:00", "5:00", "6:00"]})
-        fig_bar.update_layout(bargap=0.7)
-        st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{suffix}")
+        wins_df['Cat'] = wins_df['entry_time'].apply(get_color_cat)
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            fig = px.bar(wins_df.sort_values('entry_time'), x='entry_time', color='Cat', 
+                         title="Winning Entry Distribution (1m)", color_discrete_map=color_map)
+            fig.update_layout(bargap=0.4)
+            st.plotly_chart(fig, use_container_width=True, key=f"w_b_{suffix}")
+        with c2:
+            st.metric("AVG WIN DURATION", f"{round(wins_df['duration_mins'].mean(), 1)}m")
+            st.plotly_chart(px.pie(wins_df, names='entry_info', title="Winning Setups", hole=0.4), key=f"w_p_{suffix}")
 
     st.divider()
 
-    c1, c2 = st.columns(2)
-    c3, c4, c5 = st.columns(3)
-    with c1: st.plotly_chart(px.pie(df_subset, names='entry_info', title="ENTRY_TYPE %", hole=0.4), use_container_width=True, key=f"p1_{suffix}")
-    with c2: st.plotly_chart(px.pie(df_subset, names='market', title="MARKET %", hole=0.4), use_container_width=True, key=f"p2_{suffix}")
-    with c3: st.plotly_chart(px.pie(df_subset, names='result', title="WIN_RATE %", hole=0.4, color='result', color_discrete_map={'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#888888'}), use_container_width=True, key=f"p3_{suffix}")
-    with c4: st.plotly_chart(px.pie(df_subset, names='session', title="SESSIONS %", hole=0.4), use_container_width=True, key=f"p4_{suffix}")
-    with c5: st.plotly_chart(px.pie(df_subset, names='target', title="TARGETS %", hole=0.4), use_container_width=True, key=f"p5_{suffix}")
+    # --- BREAK EVENS ---
+    st.markdown("### 🛡️ THE BREAK-EVEN DEFENSE")
+    if be_df.empty: st.write("No BE trades recorded.")
+    else:
+        be_df['Cat'] = be_df['entry_time'].apply(get_color_cat)
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            fig = px.bar(be_df.sort_values('entry_time'), x='entry_time', color='Cat', 
+                         title="BE Entry Distribution (1m)", color_discrete_map=color_map)
+            fig.update_layout(bargap=0.4)
+            st.plotly_chart(fig, use_container_width=True, key=f"be_b_{suffix}")
+        with c2:
+            st.metric("AVG BE DURATION", f"{round(be_df['duration_mins'].mean(), 1)}m")
+            st.plotly_chart(px.pie(be_df, names='session', title="BE Sessions", hole=0.4), key=f"be_p_{suffix}")
+
+    st.divider()
+
+    # --- LOSSES ---
+    st.markdown("### 💀 THE AUTOPSY (LOSSES)")
+    if loss_df.empty: st.write("Zero losses. Stay ruthless.")
+    else:
+        loss_df['Cat'] = loss_df['entry_time'].apply(get_color_cat)
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            fig = px.bar(loss_df.sort_values('entry_time'), x='entry_time', color='Cat', 
+                         title="Losing Entry Distribution (1m)", color_discrete_map=color_map)
+            fig.update_layout(bargap=0.4)
+            st.plotly_chart(fig, use_container_width=True, key=f"l_b_{suffix}")
+        with c2:
+            st.metric("AVG LOSS DURATION", f"{round(loss_df['duration_mins'].mean(), 1)}m")
+            st.plotly_chart(px.pie(loss_df, names='news_impact', title="Losses vs News", hole=0.4), key=f"l_p_{suffix}")
 
 conn = sqlite3.connect('trading_vault.db')
 all_trades = pd.read_sql("SELECT * FROM trades", conn)
 
-with tabs[2]: render_analytics(all_trades[all_trades['type'] == 'LIVE'], "LIVE")
-with tabs[3]: render_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO'], "TEST")
+with tabs[2]: render_segmented_analytics(all_trades[all_trades['type'] == 'LIVE'], "LIVE")
+with tabs[3]: render_segmented_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO'], "TEST")
 
 # --- TAB 5: HISTORY ---
 with tabs[4]:
@@ -159,32 +209,17 @@ with tabs[4]:
     if search_q: hist_df = hist_df[hist_df['market'].str.contains(search_q)]
     
     for _, row in hist_df.iterrows():
-        with st.expander(f"{row['date']} | {row['session']} | {row['market']} | {row['result']}"):
+        with st.expander(f"{row['date']} | {row['entry_time']} | {row['market']} | {row['result']}"):
             col1, col2 = st.columns([2, 1])
             with col1:
-                edit_key = f"edit_mode_{row['id']}"
-                if edit_key not in st.session_state: st.session_state[edit_key] = False
-                
-                if not st.session_state[edit_key]:
-                    st.write(f"**Session:** {row['session']} | **Time:** {row['entry_time']}")
-                    st.write(f"**Details:** {row['entry_info']} | **Target:** {row['target']}")
-                    st.write(f"**RR:** {row['rr']}R | **Notes:** {row['notes']}")
-                    ca, cb = st.columns(2)
-                    if ca.button("✏️ EDIT", key=f"e_{row['id']}"): st.session_state[edit_key] = True; st.rerun()
-                    if cb.button("🗑️ DELETE", key=f"d_{row['id']}"):
-                        conn = sqlite3.connect('trading_vault.db')
-                        conn.execute("DELETE FROM trades WHERE id=?", (row['id'],))
-                        conn.commit()
-                        st.rerun()
-                else:
-                    n_sess = st.text_input("Session", row['session'], key=f"ns_{row['id']}")
-                    n_time = st.text_input("Time", row['entry_time'], key=f"ntime_{row['id']}")
-                    n_ent = st.text_input("Details", row['entry_info'], key=f"ne_{row['id']}")
-                    if st.button("SAVE", key=f"s_{row['id']}"):
-                        conn = sqlite3.connect('trading_vault.db')
-                        conn.execute("UPDATE trades SET session=?, entry_time=?, entry_info=? WHERE id=?", (n_sess.upper(), n_time, n_ent, row['id']))
-                        conn.commit()
-                        st.session_state[edit_key] = False; st.rerun()
+                st.write(f"**Session:** {row['session']} | **Target:** {row['target']} | **Duration:** {row['duration_mins']}m")
+                st.write(f"**News:** {row['news_impact']} | **Model:** {row['model_name']}")
+                st.write(f"**Notes:** {row['notes']}")
+                if st.button("🗑️ DELETE", key=f"del_{row['id']}"):
+                    conn = sqlite3.connect('trading_vault.db')
+                    conn.execute("DELETE FROM trades WHERE id=?", (row['id'],))
+                    conn.commit()
+                    st.rerun()
             with col2:
                 if row['screenshot']: st.image(row['screenshot'])
 
@@ -193,8 +228,8 @@ with tabs[5]:
     st.header("COMPOUND_PROJECTOR")
     c_col1, c_col2 = st.columns([1, 2])
     with c_col1:
-        p_val = st.number_input("INITIAL", value=5000)
-        r_val = st.number_input("MONTHLY_%", value=5.0)
+        p_val = st.number_input("INITIAL_BALANCE", value=5000)
+        r_val = st.number_input("MONTHLY_PERCENT_%", value=5.0)
         y_val = st.number_input("YEARS", value=5)
     months, bal = int(y_val * 12), p_val
     data = []
