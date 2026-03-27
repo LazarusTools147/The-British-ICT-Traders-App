@@ -5,8 +5,8 @@ from datetime import datetime
 import sqlite3
 import re
 
-# --- 1. SETUP & PERSISTENCE SHIELD ---
-st.set_page_config(page_title="ICT_MASTER_TERMINAL_V6.5", layout="wide")
+# --- 1. SETUP & DATABASE REPAIR ---
+st.set_page_config(page_title="ICT_MASTER_TERMINAL_V6.4", layout="wide")
 
 def init_db():
     conn = sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -18,7 +18,6 @@ def init_db():
                   risk_pc REAL, rr REAL, notes TEXT, date TEXT, duration_mins INTEGER, 
                   news_impact TEXT, screenshot BLOB)''')
     
-    # Structural Integrity Check (Ensuring no columns are missing)
     cols = [('duration_mins', 'INTEGER'), ('news_impact', 'TEXT'), ('session', 'TEXT'), ('target', 'TEXT'), ('sessions', 'TEXT'), ('entry_tf', 'TEXT')]
     for col_name, col_type in cols:
         try: c.execute(f'ALTER TABLE trades ADD COLUMN {col_name} {col_type}')
@@ -78,11 +77,11 @@ with tabs[1]:
                 env = st.radio("ENV", ["LIVE", "BACKTEST/DEMO"], horizontal=True)
                 mod = st.selectbox("MODEL", models)
                 mkt = st.text_input("MARKET").upper()
-                ent_type = st.text_input("ENTRY DETAILS")
+                ent_type = st.text_input("ENTRY DETAILS (e.g. FVG)")
             with c2:
                 ent_time = st.text_input("TIME (HH:MM)")
-                ent_tf = st.text_input("TF").upper()
-                ent_sess = st.text_input("SESSION").upper()
+                ent_tf = st.text_input("TF (e.g. 1M, 5M)").upper()
+                ent_sess = st.text_input("SESSION (e.g. LONDON)").upper()
                 dur = st.number_input("DURATION (MINS)", min_value=1, value=15)
             with c3:
                 news = st.text_input("NEWS").upper()
@@ -96,21 +95,25 @@ with tabs[1]:
             img = st.file_uploader("CHART", type=['png', 'jpg', 'jpeg'])
             
             if st.form_submit_button("SAVE_ENTRY"):
-                img_data = img.read() if img else None
-                conn = sqlite3.connect('trading_vault.db')
-                conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, entry_tf, session, 
-                                target, result, risk_pc, rr, notes, date, duration_mins, news_impact, screenshot) 
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                             (mod, env, mkt, ent_type, ent_time, ent_tf, ent_sess, targ, res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), dur, news, img_data))
-                conn.commit(); conn.close()
-                st.success("DATA SECURED")
+                if not mkt or not ent_time or not res:
+                    st.error("MISSING DATA: Market, Time, and Result are required.")
+                else:
+                    img_data = img.read() if img else None
+                    conn = sqlite3.connect('trading_vault.db')
+                    conn.execute('''INSERT INTO trades (model_name, type, market, entry_info, entry_time, entry_tf, session, 
+                                    target, result, risk_pc, rr, notes, date, duration_mins, news_impact, screenshot) 
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                 (mod, env, mkt, ent_type, ent_time, ent_tf, ent_sess, targ, res, rsk, rvr, nts, dt.strftime("%Y-%m-%d"), dur, news, img_data))
+                    conn.commit(); conn.close()
+                    st.success("DATA SECURED")
 
-# --- 4. ANALYTICS ENGINE (v6.5 Symmetrical Layout) ---
+# --- 4. ANALYTICS ENGINE (v6.4 Symmetrical Layout + Orange BE) ---
 def render_kpi_analytics(df_all, suffix):
     if df_all.empty:
         st.info(f"NO DATA FOR {suffix}.")
         return
 
+    # --- TOP ROW: GLOBAL KPI ---
     st.markdown("## 📈 GLOBAL PERFORMANCE KPI")
     k1, k2, k3, k4 = st.columns(4)
     with k1: st.metric("GLOBAL WIN RATE", f"{round((len(df_all[df_all['result']=='WIN']) / len(df_all)) * 100, 1)}%")
@@ -120,21 +123,28 @@ def render_kpi_analytics(df_all, suffix):
 
     st.divider()
     
+    # --- MASTER VISUALS (ORANGE BE INTEGRATED) ---
     kpi1, kpi2 = st.columns([3, 1])
+    # Map colors: WIN=Green, LOSS=Red, BE=Orange
     res_colors = {'WIN':'#00ff00', 'LOSS':'#ff0000', 'BE':'#FFA500'}
     
     with kpi1:
         df_all = df_all.sort_values('entry_time')
-        fig_main = px.bar(df_all, x='entry_time', y='rr', color='result', title="Performance Pulse", color_discrete_map=res_colors)
+        fig_main = px.bar(df_all, x='entry_time', y='rr', color='result', title="Performance Pulse (RR over Time)",
+                         color_discrete_map=res_colors)
         fig_main.update_layout(bargap=0.3); st.plotly_chart(fig_main, use_container_width=True)
     with kpi2:
-        st.plotly_chart(px.pie(df_all, names='result', title="WIN_RATE PIE", hole=0.5, color='result', color_discrete_map=res_colors), use_container_width=True)
+        st.plotly_chart(px.pie(df_all, names='result', title="WIN_RATE PIE", hole=0.5,
+                              color='result', color_discrete_map=res_colors), use_container_width=True)
 
     st.divider()
 
+    # SECTION GENERATOR (WIN, LOSS, BE)
     def draw_segmented_section(res_type, label, emoji, sfx):
         sub_df = df_all[df_all['result'] == res_type].copy()
         if sub_df.empty: return
+        
+        # All sections now have expanders (WIN is expanded by default)
         with st.expander(f"{emoji} {label} DEEP-DIVE ANALYSIS", expanded=(res_type == "WIN")):
             sk1, sk2 = st.columns([3, 1])
             with sk1:
@@ -145,10 +155,11 @@ def render_kpi_analytics(df_all, suffix):
                     if (h==2 and mn>=50) or (h==3 and mn<=10) or (h==3 and mn>=50) or (h==4 and mn<=10) or (h==4 and mn>=50) or (h==5 and mn<=10): return "MACRO"
                     return f"{h:02d}:00"
                 sub_df['Cat'] = sub_df['entry_time'].apply(get_macro)
-                fig_sub = px.bar(sub_df.sort_values('entry_time'), x='entry_time', color='Cat', title=f"{label} Pulse", color_discrete_map={"MACRO":"#FFD700"})
+                fig_sub = px.bar(sub_df.sort_values('entry_time'), x='entry_time', color='Cat', title=f"{label} Precision Pulse", color_discrete_map={"MACRO":"#FFD700"})
                 st.plotly_chart(fig_sub, use_container_width=True, key=f"bar_{res_type}_{sfx}")
+            
             with sk2:
-                st.metric(f"AVG {res_type} TIME", f"{round(sub_df['duration_mins'].mean(), 1)}m")
+                st.metric(f"AVG {label} TIME", f"{round(sub_df['duration_mins'].mean(), 1)}m")
                 st.plotly_chart(px.pie(sub_df, names='entry_info', title="Entry Types", hole=0.4), use_container_width=True, key=f"p_ent_{res_type}_{sfx}")
 
             p1, p2, p3, p4, p5 = st.columns(5)
@@ -169,41 +180,29 @@ all_trades = pd.read_sql("SELECT * FROM trades", conn)
 with tabs[2]: render_kpi_analytics(all_trades[all_trades['type'] == 'LIVE'], "LIVE")
 with tabs[3]: render_kpi_analytics(all_trades[all_trades['type'] == 'BACKTEST/DEMO'], "TEST")
 
-# --- TAB 5: HISTORY (With Edit Mode) ---
+# --- TAB 5: HISTORY ---
 with tabs[4]:
-    st.header("HISTORY & JOURNAL")
+    st.header("HISTORY")
     for _, row in all_trades[::-1].iterrows():
         with st.expander(f"{row['date']} | {row['entry_time']} | {row['market']} | {row['result']}"):
-            edit_key = f"edit_{row['id']}"
-            if edit_key not in st.session_state: st.session_state[edit_key] = False
-            
-            if not st.session_state[edit_key]:
-                c1, c2 = st.columns([2, 1])
-                with c1:
-                    st.write(f"**TF:** {row['entry_tf']} | **Sess:** {row['session']} | **Target:** {row['target']} | **Dur:** {row['duration_mins']}m")
-                    st.info(f"**Journal Notes:** {row['notes']}")
-                    e_col, d_col = st.columns(2)
-                    if e_col.button("✏️ EDIT ENTRY", key=f"eb_{row['id']}"):
-                        st.session_state[edit_key] = True; st.rerun()
-                    if d_col.button("🗑️ DELETE", key=f"db_{row['id']}"):
-                        conn = sqlite3.connect('trading_vault.db'); conn.execute("DELETE FROM trades WHERE id=?", (row['id'],)); conn.commit(); st.rerun()
-                with c2:
-                    if row['screenshot']: st.image(row['screenshot'])
-            else:
-                # EDIT MODE FORM
-                new_notes = st.text_area("Edit Notes", row['notes'], key=f"en_{row['id']}")
-                new_res = st.text_input("Edit Result", row['result'], key=f"er_{row['id']}")
-                if st.button("💾 SAVE CHANGES", key=f"es_{row['id']}"):
-                    conn = sqlite3.connect('trading_vault.db')
-                    conn.execute("UPDATE trades SET notes=?, result=? WHERE id=?", (new_notes, new_res.upper(), row['id']))
-                    conn.commit(); st.session_state[edit_key] = False; st.rerun()
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                st.write(f"TF: {row['entry_tf']} | Sess: {row['session']} | Target: {row['target']} | Dur: {row['duration_mins']}m")
+                st.info(f"Notes: {row['notes']}")
+                if st.button("🗑️ DELETE", key=f"del_{row['id']}"):
+                    conn = sqlite3.connect('trading_vault.db'); conn.execute("DELETE FROM trades WHERE id=?", (row['id'],)); conn.commit(); st.rerun()
+            with c2:
+                if row['screenshot']: st.image(row['screenshot'])
 
+# --- TAB 6: COMPOUNDER ---
 with tabs[5]:
     st.header("COMPOUNDER")
-    p, r, y = st.number_input("START", 5000), st.number_input("%/MO", 5.0), st.number_input("YRS", 5)
+    p, r, y = st.number_input("STARTING BALANCE", 5000), st.number_input("MONTHLY %", 5.0), st.number_input("YEARS", 5)
     bal, data = p, []
     for m in range(1, int(y*12)+1):
         bal *= (1 + (r/100))
         if m%12==0: data.append({"Year": m//12, "Balance": round(bal, 2)})
     st.line_chart(pd.DataFrame(data).set_index("Year"))
+    st.table(pd.DataFrame(data))
+
 conn.close()
