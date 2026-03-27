@@ -6,7 +6,7 @@ import sqlite3
 import re
 
 # --- 1. SETUP ---
-st.set_page_config(page_title="ICT_MASTER_TERMINAL_V7.2", layout="wide")
+st.set_page_config(page_title="ICT_MASTER_TERMINAL_V7.3", layout="wide")
 
 def get_connection():
     return sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -20,7 +20,6 @@ def init_db():
                   entry_info TEXT, entry_time TEXT, entry_tf TEXT, session TEXT, target TEXT, result TEXT, 
                   risk_pc REAL, rr REAL, notes TEXT, date TEXT, duration_mins INTEGER, 
                   news_impact TEXT, screenshot BLOB)''')
-    
     cols = [('model_var', 'TEXT'), ('duration_mins', 'INTEGER'), ('news_impact', 'TEXT'), 
             ('session', 'TEXT'), ('target', 'TEXT'), ('entry_tf', 'TEXT')]
     for col, typ in cols:
@@ -93,7 +92,7 @@ with tabs[1]:
                              (mod, mvar, env, mkt, tm, tf, sess, res, rsk, rr_val, nts, dt.strftime("%Y-%m-%d"), dur, nws, img_data))
                 conn.commit(); conn.close(); st.success("TRADE ARCHIVED")
 
-# --- 4. ANALYTICS (Fixed Duplicate ID Error) ---
+# --- 4. ANALYTICS (With Variation Pie Charts) ---
 def render_analytics(df, suffix):
     if df.empty: return st.info("No Data Recorded.")
     
@@ -128,7 +127,8 @@ def render_analytics(df, suffix):
                 st.plotly_chart(px.bar(sdf.sort_values('entry_time'), x='entry_time', color='Cat', color_discrete_map={"MACRO":"#FFD700"}), use_container_width=True, key=f"b_{res_t}_{suffix}")
             with sk2:
                 st.metric(f"AVG {res_t} TIME", f"{round(sdf['duration_mins'].mean(), 1)}m")
-                st.plotly_chart(px.pie(sdf, names='model_var', title="Variations"), use_container_width=True, key=f"var_{res_t}_{suffix}")
+                # NEW VARIATION PIE CHART ADDED HERE
+                st.plotly_chart(px.pie(sdf, names='model_var', title="Variations"), use_container_width=True, key=f"var_pie_{res_t}_{suffix}")
             
             p1, p2, p3, p4 = st.columns(4)
             p_args = dict(hole=0.4, width=220, height=220)
@@ -148,7 +148,7 @@ conn.close()
 with tabs[2]: render_analytics(all_t[all_t['type']=='LIVE'], "LIVE")
 with tabs[3]: render_analytics(all_t[all_t['type']=='BACKTEST/DEMO'], "TEST")
 
-# --- 5. JOURNAL ---
+# --- 5. JOURNAL (Fixing Assignment Error) ---
 with tabs[4]:
     st.header("📓 THE JOURNAL")
     if all_t.empty:
@@ -174,7 +174,9 @@ with tabs[4]:
         for _, row in df_j[::-1].iterrows():
             with st.expander(f"📁 {row['model_name']} [{row['model_var']}] — {row['date'].strftime('%Y-%m-%d')} — {row['result']}"):
                 ek = f"edit_{row['id']}"
-                if ek not in st.session_state: st.session_state[ek] = False
+                # The fix: Initialize session state outside the conditional form logic
+                if ek not in st.session_state:
+                    st.session_state[ek] = False
                 
                 if not st.session_state[ek]:
                     c1, c2 = st.columns([2, 1])
@@ -182,20 +184,33 @@ with tabs[4]:
                         st.write(f"**TF:** {row['entry_tf']} | **SESS:** {row['session']} | **DUR:** {row['duration_mins']}m")
                         st.info(f"**NOTES:** {row['notes']}")
                         ec, dc = st.columns(2)
-                        if ec.button("✏️ EDIT", key=f"eb_{row['id']}"): st.session_state[ek]=True; st.rerun()
-                        if dc.button("🗑️ DELETE", key=f"db_{row['id']}"):
-                            conn = get_connection(); conn.execute("DELETE FROM trades WHERE id=?",(row['id'],)); conn.commit(); conn.close(); st.rerun()
+                        if ec.button("✏️ EDIT", key=f"btn_edit_{row['id']}"):
+                            st.session_state[ek] = True
+                            st.rerun()
+                        if dc.button("🗑️ DELETE", key=f"btn_del_{row['id']}"):
+                            conn = get_connection()
+                            conn.execute("DELETE FROM trades WHERE id=?",(row['id'],))
+                            conn.commit(); conn.close(); st.rerun()
                     with c2:
                         if row['screenshot']: st.image(row['screenshot'])
                 else:
-                    with st.form(f"edit_{row['id']}"):
-                        n_nts = st.text_area("NOTES", row['notes'])
-                        n_res = st.text_input("RESULT", row['result']).upper()
-                        n_var = st.text_input("VARIATION", row['model_var']).upper()
-                        if st.form_submit_button("💾 SAVE"):
+                    # Form logic for editing
+                    with st.form(key=f"form_edit_{row['id']}"):
+                        n_nts = st.text_area("NOTES", value=row['notes'])
+                        n_res = st.text_input("RESULT", value=row['result']).upper()
+                        n_var = st.text_input("VARIATION", value=row['model_var']).upper()
+                        
+                        col1, col2 = st.columns(2)
+                        if col1.form_submit_button("💾 SAVE"):
                             conn = get_connection()
-                            conn.execute("UPDATE trades SET notes=?, result=?, model_var=? WHERE id=?", (n_nts, n_res, n_var, row['id']))
-                            conn.commit(); conn.close(); st.session_state[ek]=False; st.rerun()
+                            conn.execute("UPDATE trades SET notes=?, result=?, model_var=? WHERE id=?", 
+                                         (n_nts, n_res, n_var, row['id']))
+                            conn.commit(); conn.close()
+                            st.session_state[ek] = False
+                            st.rerun()
+                        if col2.form_submit_button("❌ CANCEL"):
+                            st.session_state[ek] = False
+                            st.rerun()
 
 with tabs[5]:
     st.header("📈 COMPOUNDER")
