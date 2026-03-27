@@ -6,7 +6,7 @@ import sqlite3
 import re
 
 # --- 1. SETUP ---
-st.set_page_config(page_title="ICT_MASTER_TERMINAL_V7.3", layout="wide")
+st.set_page_config(page_title="ICT_MASTER_TERMINAL_V7.4", layout="wide")
 
 def get_connection():
     return sqlite3.connect('trading_vault.db', check_same_thread=False)
@@ -92,7 +92,7 @@ with tabs[1]:
                              (mod, mvar, env, mkt, tm, tf, sess, res, rsk, rr_val, nts, dt.strftime("%Y-%m-%d"), dur, nws, img_data))
                 conn.commit(); conn.close(); st.success("TRADE ARCHIVED")
 
-# --- 4. ANALYTICS (With Variation Pie Charts) ---
+# --- 4. ANALYTICS ---
 def render_analytics(df, suffix):
     if df.empty: return st.info("No Data Recorded.")
     
@@ -127,7 +127,6 @@ def render_analytics(df, suffix):
                 st.plotly_chart(px.bar(sdf.sort_values('entry_time'), x='entry_time', color='Cat', color_discrete_map={"MACRO":"#FFD700"}), use_container_width=True, key=f"b_{res_t}_{suffix}")
             with sk2:
                 st.metric(f"AVG {res_t} TIME", f"{round(sdf['duration_mins'].mean(), 1)}m")
-                # NEW VARIATION PIE CHART ADDED HERE
                 st.plotly_chart(px.pie(sdf, names='model_var', title="Variations"), use_container_width=True, key=f"var_pie_{res_t}_{suffix}")
             
             p1, p2, p3, p4 = st.columns(4)
@@ -148,7 +147,7 @@ conn.close()
 with tabs[2]: render_analytics(all_t[all_t['type']=='LIVE'], "LIVE")
 with tabs[3]: render_analytics(all_t[all_t['type']=='BACKTEST/DEMO'], "TEST")
 
-# --- 5. JOURNAL (Fixing Assignment Error) ---
+# --- 5. JOURNAL ---
 with tabs[4]:
     st.header("📓 THE JOURNAL")
     if all_t.empty:
@@ -165,7 +164,7 @@ with tabs[4]:
         elif "Week" in cal_filter: df_j = df_j[df_j['date'] >= (now - timedelta(days=7))]
         elif "Day" in cal_filter: df_j = df_j[df_j['date'].dt.date == now.date()]
 
-        vars_avail = ["ALL VARIATIONS"] + list(df_j['model_var'].unique())
+        vars_avail = ["ALL VARIATIONS"] + list(df_j['model_var'].dropna().unique())
         v_select = st.selectbox("VARIATION SUB-TAB", vars_avail)
         if v_select != "ALL VARIATIONS":
             df_j = df_j[df_j['model_var'] == v_select]
@@ -174,7 +173,6 @@ with tabs[4]:
         for _, row in df_j[::-1].iterrows():
             with st.expander(f"📁 {row['model_name']} [{row['model_var']}] — {row['date'].strftime('%Y-%m-%d')} — {row['result']}"):
                 ek = f"edit_{row['id']}"
-                # The fix: Initialize session state outside the conditional form logic
                 if ek not in st.session_state:
                     st.session_state[ek] = False
                 
@@ -194,21 +192,21 @@ with tabs[4]:
                     with c2:
                         if row['screenshot']: st.image(row['screenshot'])
                 else:
-                    # Form logic for editing
+                    # REPAIRED EDIT FORM
                     with st.form(key=f"form_edit_{row['id']}"):
-                        n_nts = st.text_area("NOTES", value=row['notes'])
-                        n_res = st.text_input("RESULT", value=row['result']).upper()
-                        n_var = st.text_input("VARIATION", value=row['model_var']).upper()
+                        n_nts = st.text_area("NOTES", value=str(row['notes'] or ""))
+                        n_res = st.text_input("RESULT", value=str(row['result'] or "")).upper()
+                        n_var = st.text_input("VARIATION", value=str(row['model_var'] or "")).upper()
                         
-                        col1, col2 = st.columns(2)
-                        if col1.form_submit_button("💾 SAVE"):
+                        sc1, sc2 = st.columns(2)
+                        if sc1.form_submit_button("💾 SAVE"):
                             conn = get_connection()
                             conn.execute("UPDATE trades SET notes=?, result=?, model_var=? WHERE id=?", 
                                          (n_nts, n_res, n_var, row['id']))
                             conn.commit(); conn.close()
                             st.session_state[ek] = False
                             st.rerun()
-                        if col2.form_submit_button("❌ CANCEL"):
+                        if sc2.form_submit_button("❌ CANCEL"):
                             st.session_state[ek] = False
                             st.rerun()
 
