@@ -17,7 +17,7 @@ def init_db():
     c = conn.cursor()
 
     # 1. ARCHITECT TABLE: Stores the logic for your trading models
-    # Added screenshot column for model schematics
+    # Includes the binary screenshot column for model schematics
     c.execute('''
         CREATE TABLE IF NOT EXISTS models (
             name TEXT PRIMARY KEY, 
@@ -62,8 +62,10 @@ def init_db():
         )
     ''')
 
-    # --- STRUCTURAL MAINTENANCE (Auto-Repair) ---
+    # --- STRUCTURAL MAINTENANCE (Auto-Repair Suite) ---
     # This block prevents crashes if you add features but the DB file is old.
+    # It checks for existing columns and adds them if they are missing.
+    
     trade_columns = [
         ('model_var', 'TEXT'), 
         ('duration_mins', 'INTEGER'), 
@@ -76,13 +78,14 @@ def init_db():
         try:
             c.execute(f'ALTER TABLE trades ADD COLUMN {col_name} {col_type}')
         except sqlite3.OperationalError:
-            # Column already exists, skip it
+            # Column already exists, safe to ignore
             pass
 
-    # Maintenance for the models table (Adding screenshot column if it doesn't exist)
+    # Specific maintenance for the models table to support the new Screenshot feature
     try:
         c.execute('ALTER TABLE models ADD COLUMN screenshot BLOB')
     except sqlite3.OperationalError:
+        # Column already exists
         pass
 
     conn.commit()
@@ -91,8 +94,7 @@ def init_db():
 def execute_query(query, params=(), commit=False):
     """
     A helper function to handle quick SQL operations safely.
-    This is used by other modules to interact with the database without 
-    writing full connection boilerplate every time.
+    Ensures connections are closed properly even if a query fails.
     """
     conn = get_connection()
     try:
@@ -101,13 +103,20 @@ def execute_query(query, params=(), commit=False):
         if commit:
             conn.commit()
         return cursor.fetchall()
+    except Exception as e:
+        st.error(f"Database Error: {e}")
+        return []
     finally:
         conn.close()
 
 def get_all_models():
-    """Utility to fetch all saved models for selectors."""
+    """Utility to fetch all saved models for the Architect/Forge selectors."""
     conn = get_connection()
     try:
-        return sqlite3.connect('trading_vault.db').cursor().execute("SELECT * FROM models").fetchall()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM models")
+        return cursor.fetchall()
+    except:
+        return []
     finally:
         conn.close()

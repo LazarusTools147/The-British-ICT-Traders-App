@@ -8,60 +8,78 @@ def render_architect():
     st.header("🏗️ MODEL_ARCHITECT")
     
     conn = get_connection()
-    # Fetch existing models to see if we need to edit
+    # Fetch existing models to populate the editor
     existing_models = pd.read_sql("SELECT * FROM models", conn)
     conn.close()
 
-    # --- MODE SELECTOR ---
-    mode = st.radio("ARCHITECT MODE", ["CREATE NEW MODEL", "EDIT/AMEND EXISTING"], horizontal=True)
+    # --- ARCHITECT MODE SELECTOR ---
+    mode = st.radio("SELECT ARCHITECT MODE", ["CREATE NEW MODEL", "EDIT EXISTING MODEL"], horizontal=True)
     
+    # Initialize form variables
     m_name = ""
     m_logic = ""
     m_sess = []
     current_img = None
 
-    if mode == "EDIT/AMEND EXISTING":
+    if mode == "EDIT EXISTING MODEL":
         if existing_models.empty:
             st.warning("No models found in the vault to edit.")
         else:
-            target = st.selectbox("SELECT MODEL TO AMEND", existing_models['name'].tolist())
-            row = existing_models[existing_models['name'] == target].iloc[0]
-            m_name = row['name']
-            m_logic = row['logic']
-            m_sess = row['sessions'].split(",") if row['sessions'] else []
-            # Safety check for the screenshot column
-            current_img = row['screenshot'] if 'screenshot' in existing_models.columns else None
+            target_model = st.selectbox("SELECT MODEL TO AMEND", existing_models['name'].tolist())
+            # Extract data for the selected model
+            model_row = existing_models[existing_models['name'] == target_model].iloc[0]
+            m_name = model_row['name']
+            m_logic = model_row['logic']
+            # Convert comma-separated string back to list for multiselect
+            if model_row['sessions']:
+                m_sess = model_row['sessions'].split(",")
+            # Get existing image if available
+            if 'screenshot' in existing_models.columns:
+                current_img = model_row['screenshot']
 
-    # --- THE ARCHITECT FORM ---
+    # --- THE MODEL FORM ---
     with st.form("model_form", clear_on_submit=(mode == "CREATE NEW MODEL")):
         st.subheader("Model Specifications")
-        name_input = st.text_input("MODEL NAME (e.g., THE LONDON MODEL)", value=m_name).upper()
-        sess_input = st.multiselect("ALLOWED SESSIONS", ["ASIA", "LONDON", "NY AM", "NY PM"], default=m_sess)
-        logic_input = st.text_area("CORE LOGIC & ENTRY RULES", value=m_logic, height=250)
+        
+        name_input = st.text_input("MODEL NAME", value=m_name).upper()
+        
+        sess_input = st.multiselect(
+            "ALLOWED SESSIONS", 
+            ["ASIA", "LONDON", "NY AM", "NY PM"], 
+            default=m_sess
+        )
+        
+        logic_input = st.text_area(
+            "CORE LOGIC & ENTRY RULES", 
+            value=m_logic, 
+            height=250,
+            placeholder="Define your NWOG, FVG, and MSS criteria here..."
+        )
         
         st.divider()
         st.subheader("Visual Schematic")
-        img_input = st.file_uploader("UPLOAD MODEL EXAMPLE (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+        st.info("Upload a 'Standard' example of this model for quick reference.")
+        img_input = st.file_uploader("UPLOAD PNG/JPG SCHEMATIC", type=['png', 'jpg', 'jpeg'])
         
-        if st.form_submit_button("ARCHIVE TO VAULT"):
+        if st.form_submit_button("ARCHIVE MODEL TO VAULT"):
             if name_input and logic_input:
-                # Logic: If editing and no new image uploaded, keep the old one.
-                final_img = img_input.read() if img_input else current_img
+                # If editing and no new image, retain the old one
+                save_img = img_input.read() if img_input else current_img
                 
                 conn = get_connection()
                 conn.execute(
                     "INSERT OR REPLACE INTO models (name, logic, sessions, screenshot) VALUES (?, ?, ?, ?)",
-                    (name_input, logic_input, ",".join(sess_input), final_img)
+                    (name_input, logic_input, ",".join(sess_input), save_img)
                 )
                 conn.commit()
                 conn.close()
-                st.success(f"✔️ {name_input} UPDATED AND SECURED")
+                st.success(f"✔️ MODEL '{name_input}' HAS BEEN SECURED.")
                 st.rerun()
             else:
-                st.error("Name and Logic are mandatory.")
+                st.error("Model Name and Logic are mandatory fields.")
 
-    # Display the current schematic if it exists
-    if current_img:
+    # Show existing schematic if in edit mode and image exists
+    if mode == "EDIT EXISTING MODEL" and current_img:
         st.divider()
         st.subheader(f"Current {m_name} Schematic")
         st.image(current_img, use_container_width=True)
@@ -72,9 +90,9 @@ def render_forge():
     models_df = pd.read_sql("SELECT name FROM models", conn)
     conn.close()
     
-    models = models_df['name'].tolist()
+    models_list = models_df['name'].tolist()
     
-    if not models:
+    if not models_list:
         st.warning("⚠️ NO MODELS FOUND. CREATE ONE IN THE ARCHITECT TAB FIRST.")
         return
 
@@ -85,9 +103,9 @@ def render_forge():
         
         with c1:
             env = st.radio("ENVIRONMENT", ["LIVE", "BACKTEST/DEMO"], horizontal=True)
-            mod = st.selectbox("MODEL", models)
-            mvar = st.text_input("MODEL VARIATION").upper()
-            mkt = st.text_input("MARKET").upper()
+            mod = st.selectbox("MODEL", models_list)
+            mvar = st.text_input("MODEL VARIATION (e.g., 2022, Silver Bullet)").upper()
+            mkt = st.text_input("MARKET (e.g., NQ, ES, GOLD)").upper()
             
         with c2:
             tm = st.text_input("ENTRY TIME (HH:MM)")
@@ -102,13 +120,14 @@ def render_forge():
             rsk = st.number_input("RISK %", value=1.0, step=0.1)
             dt = st.date_input("DATE", datetime.now())
             
-        nts = st.text_area("JOURNAL NOTES")
+        nts = st.text_area("JOURNAL NOTES (Context, Mistakes, Wins)")
         img = st.file_uploader("UPLOAD CHART SCREENSHOT", type=['png', 'jpg', 'jpeg'])
         
-        if st.form_submit_button("SAVE DATA"):
+        if st.form_submit_button("SAVE DATA TO JOURNAL"):
             if not mkt or not tm:
-                st.error("Market and Time are mandatory.")
+                st.error("Market and Time are mandatory fields.")
             else:
+                # Math: TP / SL = RR
                 calculated_rr = tp_h / sl_h if sl_h > 0 else 0
                 img_data = img.read() if img else None
                 
@@ -124,56 +143,71 @@ def render_forge():
                 )
                 conn.commit()
                 conn.close()
-                st.success("🎯 DATA ARCHIVED")
+                st.success("🎯 DATA ARCHIVED SUCCESSFULLY.")
 
 def render_compounder():
     """Tab 6: Advanced Equity Projector with Lifestyle Variables."""
     st.header("📈 ADVANCED EQUITY PROJECTOR")
     
-    c1, c2 = st.columns([1, 2])
+    col_input, col_chart = st.columns([1, 2])
     
-    with c1:
-        st.subheader("Core Strategy")
+    with col_input:
+        st.subheader("Strategy Parameters")
         start_bal = st.number_input("STARTING CAPITAL ($)", value=5000)
-        monthly_ret = st.number_input("MONTHLY % RETURN TARGET", value=5.0)
-        years = st.number_input("YEARS TO PROJECT", min_value=1, value=5)
+        monthly_ret = st.number_input("MONTHLY % RETURN", value=5.0)
+        years_to_run = st.number_input("YEARS TO PROJECT", min_value=1, value=5)
         
         st.divider()
-        st.subheader("Deposit Plan")
-        dep_amt = st.number_input("ADDITIONAL DEPOSIT ($/month)", value=100)
-        dep_inc = st.number_input("YEARLY DEPOSIT INCREASE (%)", value=0.0)
+        st.subheader("Deposit Growth")
+        monthly_deposit = st.number_input("ADDITIONAL DEPOSIT ($/mo)", value=100)
+        annual_dep_increase = st.number_input("YEARLY DEPOSIT INCREASE (%)", value=0.0)
         
         st.divider()
-        st.subheader("Withdrawal Plan")
-        wit_amt = st.number_input("WITHDRAWAL AMOUNT ($)", value=0)
-        wit_freq = st.selectbox("FREQUENCY", ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"])
+        st.subheader("Withdrawal Logic")
+        withdraw_amt = st.number_input("WITHDRAWAL AMOUNT ($)", value=0)
+        withdraw_freq = st.selectbox(
+            "WITHDRAWAL FREQUENCY", 
+            ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]
+        )
 
-    # Frequency mapping to months
-    freq_map = {"WEEKLY": 4, "MONTHLY": 1, "QUARTERLY": 3, "YEARLY": 12}
+    # Calculation logic for frequency
+    freq_lookup = {"WEEKLY": 4, "MONTHLY": 1, "QUARTERLY": 3, "YEARLY": 12}
     
-    current_bal = start_bal
-    current_dep = dep_amt
-    plot_data = []
+    # Projection Math
+    balance_tracker = start_bal
+    current_monthly_dep = monthly_deposit
+    yearly_results = []
     
-    for m in range(1, int(years * 12) + 1):
-        # 1. Trading Gains
-        current_bal *= (1 + (monthly_ret / 100))
-        # 2. Add External Deposits
-        current_bal += current_dep
-        # 3. Apply Scheduled Withdrawals
-        if m % freq_map[wit_freq] == 0:
-            withdrawal_total = wit_amt * (4 if wit_freq == "WEEKLY" else 1)
-            current_bal -= withdrawal_total
+    total_months = int(years_to_run * 12)
+    
+    for month in range(1, total_months + 1):
+        # 1. Apply Compound Interest
+        balance_tracker *= (1 + (monthly_ret / 100))
+        
+        # 2. Add the Deposit
+        balance_tracker += current_monthly_dep
+        
+        # 3. Handle Withdrawals based on selected frequency
+        months_per_withdrawal = freq_lookup[withdraw_freq]
+        if month % months_per_withdrawal == 0:
+            # If weekly, we multiply by 4 to get the monthly total withdrawal
+            actual_withdraw = withdraw_amt * (4 if withdraw_freq == "WEEKLY" else 1)
+            balance_tracker -= actual_withdraw
             
-        # 4. Yearly Deposit Scaling
-        if m % 12 == 0:
-            current_dep *= (1 + (dep_inc / 100))
-            plot_data.append({"Year": m // 12, "Projected Balance": round(max(0, current_bal), 2)})
+        # 4. Handle Annual Deposit Increases
+        if month % 12 == 0:
+            current_monthly_dep *= (1 + (annual_dep_increase / 100))
+            yearly_results.append({
+                "Year": month // 12, 
+                "Projected Balance": round(max(0, balance_tracker), 2)
+            })
             
-    df = pd.DataFrame(plot_data)
+    results_df = pd.DataFrame(yearly_results)
     
-    with c2:
-        if not df.empty:
-            st.line_chart(df.set_index("Year"))
-            st.subheader("Year-End Breakdown")
-            st.table(df)
+    with col_chart:
+        if not results_df.empty:
+            st.line_chart(results_df.set_index("Year"))
+            st.subheader("Year-End Capital Breakdown")
+            st.table(results_df)
+        else:
+            st.info("Adjust parameters to generate projection.")
