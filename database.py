@@ -1,122 +1,31 @@
-import sqlite3
 import streamlit as st
+from supabase import create_client, Client
 
-def get_connection():
-    """
-    Returns a thread-safe connection to the SQLite database.
-    Using check_same_thread=False is necessary for Streamlit's architecture.
-    """
-    return sqlite3.connect('trading_vault.db', check_same_thread=False)
+# --- 1. THE CONNECTION ---
+url: str = st.secrets["SUPABASE_URL"]
+key: str = st.secrets["SUPABASE_KEY"]
+
+# Initialize the Supabase Client
+supabase: Client = create_client(url, key)
+
+def get_supabase():
+    """Returns the authenticated Supabase client."""
+    return supabase
 
 def init_db():
-    """
-    Initializes the database schema and performs structural maintenance.
-    This runs every time the app starts to ensure the 'Vault' is secure.
-    """
-    conn = get_connection()
-    c = conn.cursor()
-
-    # 1. ARCHITECT TABLE: Stores the logic for your trading models
-    # Includes the binary screenshot column for model schematics
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS models (
-            name TEXT PRIMARY KEY, 
-            logic TEXT, 
-            sessions TEXT,
-            screenshot BLOB
-        )
-    ''')
-
-    # 2. TRADES TABLE: Stores your scalping and backtesting execution data
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            model_name TEXT, 
-            model_var TEXT, 
-            type TEXT, 
-            market TEXT, 
-            entry_time TEXT, 
-            entry_tf TEXT, 
-            session TEXT, 
-            result TEXT, 
-            risk_pc REAL, 
-            rr REAL, 
-            sl_handles REAL, 
-            tp_handles REAL, 
-            notes TEXT, 
-            date TEXT, 
-            duration_mins INTEGER, 
-            news_impact TEXT, 
-            screenshot BLOB
-        )
-    ''')
-
-    # 3. PORTFOLIO TABLE: Stores your long-term DCA / Wealth Builder positions
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS portfolio (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            asset_name TEXT, 
-            total_shares REAL, 
-            avg_price REAL, 
-            last_updated TEXT
-        )
-    ''')
-
-    # --- STRUCTURAL MAINTENANCE (Auto-Repair Suite) ---
-    # This block prevents crashes if you add features but the DB file is old.
-    # It checks for existing columns and adds them if they are missing.
-    
-    trade_columns = [
-        ('model_var', 'TEXT'), 
-        ('duration_mins', 'INTEGER'), 
-        ('news_impact', 'TEXT'),
-        ('sl_handles', 'REAL'),
-        ('tp_handles', 'REAL')
-    ]
-    
-    for col_name, col_type in trade_columns:
-        try:
-            c.execute(f'ALTER TABLE trades ADD COLUMN {col_name} {col_type}')
-        except sqlite3.OperationalError:
-            # Column already exists, safe to ignore
-            pass
-
-    # Specific maintenance for the models table to support the new Screenshot feature
+    """Health check for cloud connection."""
     try:
-        c.execute('ALTER TABLE models ADD COLUMN screenshot BLOB')
-    except sqlite3.OperationalError:
-        # Column already exists
-        pass
+        supabase.table("models").select("name").limit(1).execute()
+    except Exception as e:
+        st.error(f"SUPABASE CONNECTION ERROR: {e}")
 
-    conn.commit()
-    conn.close()
-
-def execute_query(query, params=(), commit=False):
-    """
-    A helper function to handle quick SQL operations safely.
-    Ensures connections are closed properly even if a query fails.
-    """
-    conn = get_connection()
+def execute_query(table_name, data, operation="insert"):
+    """Helper for cloud operations."""
     try:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        if commit:
-            conn.commit()
-        return cursor.fetchall()
+        if operation == "insert":
+            return supabase.table(table_name).insert(data).execute()
+        elif operation == "upsert":
+            return supabase.table(table_name).upsert(data).execute()
     except Exception as e:
         st.error(f"Database Error: {e}")
-        return []
-    finally:
-        conn.close()
-
-def get_all_models():
-    """Utility to fetch all saved models for the Architect/Forge selectors."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM models")
-        return cursor.fetchall()
-    except:
-        return []
-    finally:
-        conn.close()
+        return None
