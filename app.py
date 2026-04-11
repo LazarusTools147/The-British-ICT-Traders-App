@@ -8,6 +8,7 @@ from dca import render_dca_tab
 
 # --- 1. INITIALIZE CLOUD CONNECTION ---
 init_db()
+supabase = get_supabase()
 
 # --- 2. GLOBAL PAGE CONFIG ---
 st.set_page_config(
@@ -17,24 +18,35 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 3. AUTHENTICATION GATEKEEPER ---
+# --- 3. THE NEW CLOUD AUTHENTICATION ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
+    st.session_state.user = None
 
 if not st.session_state.auth:
     st.title("🔐 TERMINAL_ACCESS_REQUIRED")
-    st.write("Institutional Trading Vault v8.0 | Cloud Edition")
+    st.write("Institutional Trading Vault v8.0 | Multi-User Cloud")
     
-    pwd = st.text_input("ENTER MASTER ACCESS KEY", type="password")
-    if pwd == "TRADER2026":
-        st.session_state.auth = True
-        st.rerun()
-    elif pwd != "":
-        st.error("ACCESS DENIED: INVALID KEY")
+    # We use a form so hitting 'Enter' works naturally
+    with st.form("login_form"):
+        u_input = st.text_input("USERNAME").upper().strip()
+        p_input = st.text_input("PASSWORD", type="password")
+        submit = st.form_submit_button("ENTER VAULT")
+        
+        if submit:
+            # Query the users table for a matching username AND password
+            user_query = supabase.table("users").select("*").eq("username", u_input).eq("password", p_input).execute()
+            
+            if len(user_query.data) > 0:
+                st.session_state.auth = True
+                st.session_state.user = u_input
+                st.success(f"ACCESS GRANTED: WELCOME {u_input}")
+                st.rerun()
+            else:
+                st.error("ACCESS DENIED: INVALID CREDENTIALS")
     st.stop()
 
 # --- 4. DATA SYNCHRONIZATION (SUPABASE) ---
-supabase = get_supabase()
 try:
     response = supabase.table("trades").select("*").execute()
     all_trades = pd.DataFrame(response.data)
@@ -62,7 +74,6 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("📊 LIVE PERFORMANCE")
     if not all_trades.empty:
-        # Filter for LIVE trades specifically
         live_trades = all_trades[all_trades['type'] == 'LIVE']
         if not live_trades.empty:
             render_analytics(live_trades, "LIVE")
@@ -74,7 +85,6 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("🧪 BACKTEST PERFORMANCE")
     if not all_trades.empty:
-        # Filter for BACKTEST trades specifically
         test_trades = all_trades[all_trades['type'] == 'BACKTEST/DEMO']
         if not test_trades.empty:
             render_analytics(test_trades, "TEST")
@@ -94,8 +104,11 @@ with tabs[6]:
 
 # --- 6. SIDEBAR UTILITIES ---
 st.sidebar.title("TERMINAL_CONTROLS")
+st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
+
 if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.session_state.auth = False
+    st.session_state.user = None
     st.rerun()
 
 st.sidebar.divider()
