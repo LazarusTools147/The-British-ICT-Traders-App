@@ -4,14 +4,15 @@ import pandas as pd
 
 def render_analytics(df, suffix):
     """
-    Pure Analytics: Exactly your original logic + DCA Portfolio Stats.
+    Performance visualization engine.
+    suffix: "LIVE" or "TEST" to ensure chart key uniqueness.
     """
     if df.empty:
-        st.info("No Data Recorded.")
+        st.info(f"📊 NO {suffix} DATA ARCHIVED.")
         return
 
     # --- 1. GLOBAL KPI ---
-    st.markdown("## 📈 GLOBAL KPI")
+    st.markdown(f"## 📈 {suffix} GLOBAL KPI")
     k1, k2, k3, k4 = st.columns(4)
     
     with k1: 
@@ -56,3 +57,19 @@ def render_analytics(df, suffix):
     draw_seg("WIN", "WINNERS", "🏆")
     draw_seg("BE", "BREAK EVEN", "🛡️")
     draw_seg("LOSS", "LOSSES", "💀")
+
+    # --- 4. HINDSIGHT ANALYSIS (TEST DATA ONLY) ---
+    if suffix == "TEST":
+        st.divider()
+        with st.expander("👁️ HINDSIGHT MODEL ANALYSIS"):
+            st.info("Performance analysis based on the ideal model execution (Hindsight).")
+            # Filter for Winners specifically to analyze perfect setup traits
+            h_df = df[df['result'] == 'WIN']
+            if not h_df.empty:
+                hc1, hc2 = st.columns(2)
+                with hc1:
+                    st.plotly_chart(px.histogram(h_df, x="entry_time", title="Ideal Execution Times"), use_container_width=True, key="hindsight_time")
+                with hc2:
+                    st.plotly_chart(px.pie(h_df, names="model_var", title="Highest Prob Variations"), use_container_width=True, key="hindsight_var")
+            else:
+                st.write("Record 'WIN' trades in backtesting to generate hindsight data.")

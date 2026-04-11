@@ -17,11 +17,13 @@ def init_db():
     c = conn.cursor()
 
     # 1. ARCHITECT TABLE: Stores the logic for your trading models
+    # Added screenshot column for model schematics
     c.execute('''
         CREATE TABLE IF NOT EXISTS models (
             name TEXT PRIMARY KEY, 
             logic TEXT, 
-            sessions TEXT
+            sessions TEXT,
+            screenshot BLOB
         )
     ''')
 
@@ -77,12 +79,20 @@ def init_db():
             # Column already exists, skip it
             pass
 
+    # Maintenance for the models table (Adding screenshot column if it doesn't exist)
+    try:
+        c.execute('ALTER TABLE models ADD COLUMN screenshot BLOB')
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 
 def execute_query(query, params=(), commit=False):
     """
     A helper function to handle quick SQL operations safely.
+    This is used by other modules to interact with the database without 
+    writing full connection boilerplate every time.
     """
     conn = get_connection()
     try:
@@ -91,5 +101,13 @@ def execute_query(query, params=(), commit=False):
         if commit:
             conn.commit()
         return cursor.fetchall()
+    finally:
+        conn.close()
+
+def get_all_models():
+    """Utility to fetch all saved models for selectors."""
+    conn = get_connection()
+    try:
+        return sqlite3.connect('trading_vault.db').cursor().execute("SELECT * FROM models").fetchall()
     finally:
         conn.close()
