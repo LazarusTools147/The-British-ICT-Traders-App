@@ -66,6 +66,7 @@ def render_forge():
             mod = st.selectbox("MODEL", models)
             mvar = st.text_input("VARIATION").upper()
             mkt = st.text_input("MARKET").upper()
+            is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
         with c2:
             tm, tf = st.text_input("TIME"), st.text_input("TF").upper()
             sess = st.text_input("SESSION").upper()
@@ -89,7 +90,8 @@ def render_forge():
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
                 "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
-                "notes": nts, "date": str(dt), "duration_mins": dur, "screenshot_text": img_b64
+                "notes": nts, "date": str(dt), "duration_mins": dur, 
+                "screenshot_text": img_b64, "hindsight": is_hindsight
             }
             try:
                 supabase.table("trades").insert(trade_data).execute()

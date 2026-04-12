@@ -46,7 +46,6 @@ if not st.session_state.auth:
 
 # --- 4. DATA SYNCHRONIZATION (FILTERED BY USER) ---
 try:
-    # Strictly pull only the current user's trades
     response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
     all_trades = pd.DataFrame(response.data)
 except Exception as e:
