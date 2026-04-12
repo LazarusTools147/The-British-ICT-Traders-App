@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import base64
 from datetime import datetime
+# Note: Ensure database.py is present in your directory
 from database import get_supabase
 
 def image_to_base64(uploaded_file):
@@ -16,8 +17,12 @@ def render_architect():
     supabase = get_supabase()
     
     # PRIVACY FILTER: Fetch only the models belonging to the logged-in user
-    response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
-    existing_models = pd.DataFrame(response.data)
+    try:
+        response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
+        existing_models = pd.DataFrame(response.data)
+    except Exception as e:
+        st.error(f"Error fetching models: {e}")
+        existing_models = pd.DataFrame()
 
     mode = st.radio("ARCHITECT MODE", ["CREATE NEW MODEL", "EDIT/REFINE EXISTING"], horizontal=True)
     m_name, m_logic, m_sess, current_img_b64 = "", "", [], None
@@ -39,16 +44,18 @@ def render_architect():
             if name_in and logic_in:
                 final_img = image_to_base64(img_in) if img_in else current_img_b64
                 data = {
-                    "trader_username": st.session_state.user, # The Multi-User Stamp
+                    "trader_username": st.session_state.user,
                     "name": name_in,
                     "logic": logic_in,
                     "sessions": ",".join(sess_in),
                     "screenshot_text": final_img
                 }
-                # Upsert updates if name exists, or creates if new
-                supabase.table("models").upsert(data).execute()
-                st.success(f"✔️ {name_in} SECURED FOR {st.session_state.user}")
-                st.rerun()
+                try:
+                    supabase.table("models").upsert(data).execute()
+                    st.success(f"✔️ {name_in} SECURED FOR {st.session_state.user}")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to save model: {e}")
             else:
                 st.error("Model Name and Logic are required.")
 
@@ -62,8 +69,11 @@ def render_forge():
     supabase = get_supabase()
     
     # PRIVACY FILTER: User can only select from their own models
-    m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
-    models = [r['name'] for r in m_resp.data]
+    try:
+        m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
+        models = [r['name'] for r in m_resp.data]
+    except:
+        models = []
     
     if not models:
         st.warning("No Private Models Found. Build your first strategy in the Architect tab first."); return
@@ -96,20 +106,30 @@ def render_forge():
             rr = tp / sl if sl > 0 else 0
             
             trade_data = {
-                "trader_username": st.session_state.user, # The Multi-User Stamp
+                "trader_username": st.session_state.user,
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
                 "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
                 "notes": nts, "date": str(dt), "duration_mins": dur, 
-                "screenshot_text": img_b64, "hindsight": is_hindsight,
+                "screenshot_text": img_b64, 
+                "hindsight": is_hindsight,
                 "news_impact": news_impact
             }
+            
             try:
+                # Execution Attempt
                 supabase.table("trades").insert(trade_data).execute()
                 st.success(f"🎯 TRADE SECURED FOR {st.session_state.user}")
                 st.rerun()
             except Exception as e:
-                st.error(f"DATABASE ERROR: {e}")
+                # Detailed Error Mentor Guidance
+                error_msg = str(e)
+                if "column" in error_msg and "hindsight" in error_msg:
+                    st.error("❌ DATABASE MISMATCH: You need to add a 'hindsight' column (boolean) to your Supabase 'trades' table.")
+                elif "column" in error_msg and "news_impact" in error_msg:
+                    st.error("❌ DATABASE MISMATCH: You need to add a 'news_impact' column (text) to your Supabase 'trades' table.")
+                else:
+                    st.error(f"DATABASE ERROR: {e}")
 
 def render_compounder():
     st.header("📈 LIFESTYLE COMPOUNDER")

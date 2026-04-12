@@ -31,7 +31,6 @@ def render_analytics(df, label):
         st.metric("Expectancy (Avg RR)", f"{round(avg_rr, 2)}R")
 
     # --- 2. THE DEEP DIVE TABS ---
-    # We are including every specific study category you requested
     st.divider()
     tabs = st.tabs(["💎 WINNERS", "🧨 LOSSES", "⚖️ BREAKEVEN", "🧠 HINDSIGHT", "📰 NEWS_IMPACT"])
 
@@ -68,7 +67,6 @@ def render_analytics(df, label):
         be_df = df[df['result'] == 'BE']
         if not be_df.empty:
             st.write("**BE Frequency by Model**")
-            # Bar chart showing which models result in the most BEs
             st.bar_chart(be_df['model_name'].value_counts())
             st.write(f"Total Breakeven Trades: {len(be_df)}")
         else:
@@ -76,23 +74,26 @@ def render_analytics(df, label):
 
     with tabs[3]:
         st.subheader("🧠 HINDSIGHT & STUDY VOLUME")
-        # Filtering for trades where the Hindsight checkbox was ticked in the Forge
-        hindsight_df = df[df.get('hindsight', False) == True]
-        if not hindsight_df.empty:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Studies per Model**")
-                st.bar_chart(hindsight_df['model_name'].value_counts())
-            with col2:
-                st.write(f"**Total Hindsight Studies:** {len(hindsight_df)}")
-                # Show distribution of results within hindsight studies
-                st.write("**Hindsight Outcomes**")
-                st.bar_chart(hindsight_df['result'].value_counts())
+        # SAFETY CHECK: Verify column exists before filtering to prevent app crash
+        if 'hindsight' in df.columns:
+            hindsight_df = df[df['hindsight'] == True]
+            if not hindsight_df.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Studies per Model**")
+                    st.bar_chart(hindsight_df['model_name'].value_counts())
+                with col2:
+                    st.write(f"**Total Hindsight Studies:** {len(hindsight_df)}")
+                    st.write("**Hindsight Outcomes**")
+                    st.bar_chart(hindsight_df['result'].value_counts())
+            else:
+                st.info("No trades marked as 'Hindsight' in The Forge yet.")
         else:
-            st.info("No trades marked as 'Hindsight' in The Forge. Use this for chart studies.")
+            st.warning("⚠️ COLUMN MISSING: Add 'hindsight' (bool) to your Supabase trades table to activate this tab.")
 
     with tabs[4]:
         st.subheader("News Impact Analysis")
+        # SAFETY CHECK: Verify column exists before rendering Pie Chart
         if 'news_impact' in df.columns:
             news_counts = df['news_impact'].value_counts().reset_index()
             news_counts.columns = ['Impact Level', 'Count']
@@ -106,7 +107,7 @@ def render_analytics(df, label):
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("News Impact data column missing in database.")
+            st.warning("⚠️ COLUMN MISSING: Add 'news_impact' (text) to your Supabase trades table to activate this tab.")
 
     # --- 3. EQUITY CURVE (RR GROWTH OVER TIME) ---
     st.divider()
