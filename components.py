@@ -10,10 +10,10 @@ def image_to_base64(uploaded_file):
     return None
 
 def render_architect():
-    st.header(f"🏗️ {st.session_state.user}'s STRATEGY LIBRARY")
+    st.header(f"🏗️ {st.session_state.user}'s MODEL_ARCHITECT")
     supabase = get_supabase()
     
-    # PRIVACY FILTER: Only fetch models for THIS user
+    # INTEGRATED CHANGE: Filter models so user only sees their own
     response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
     existing_models = pd.DataFrame(response.data)
 
@@ -37,14 +37,14 @@ def render_architect():
             if name_in and logic_in:
                 final_img = image_to_base64(img_in) if img_in else current_img_b64
                 data = {
-                    "trader_username": st.session_state.user, # OWNER TAG
+                    "trader_username": st.session_state.user, # INTEGRATED STAMP
                     "name": name_in,
                     "logic": logic_in,
                     "sessions": ",".join(sess_in),
                     "screenshot_text": final_img
                 }
                 supabase.table("models").upsert(data).execute()
-                st.success(f"✔️ {name_in} SECURED FOR {st.session_state.user}")
+                st.success(f"✔️ {name_in} UPDATED FOR {st.session_state.user}")
                 st.rerun()
 
     if current_img_b64:
@@ -54,7 +54,7 @@ def render_forge():
     st.header(f"🔥 {st.session_state.user}'s FORGE")
     supabase = get_supabase()
     
-    # PRIVACY FILTER: Only let user select their own models
+    # INTEGRATED CHANGE: Filter dropdown so user only selects their own models
     m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
     models = [r['name'] for r in m_resp.data]
     
@@ -86,14 +86,14 @@ def render_forge():
             img_b64 = image_to_base64(img)
             rr = tp / sl if sl > 0 else 0
             trade_data = {
-                "trader_username": st.session_state.user, # OWNER TAG
+                "trader_username": st.session_state.user, # INTEGRATED STAMP
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
                 "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
                 "notes": nts, "date": str(dt), "duration_mins": dur, "screenshot_text": img_b64
             }
             supabase.table("trades").insert(trade_data).execute()
-            st.success("🎯 TRADE SECURED IN YOUR PRIVATE VAULT")
+            st.success("🎯 TRADE SECURED")
 
 def render_compounder():
     st.header("📈 LIFESTYLE COMPOUNDER")

@@ -4,16 +4,15 @@ from datetime import datetime, timedelta
 from database import get_supabase
 
 def render_journal_tab():
-    # Personalize the header based on who is logged in
     st.header(f"📓 {st.session_state.user}'s PRIVATE JOURNAL")
     supabase = get_supabase()
     
-    # PRIVACY FILTER: Strictly pull data for the logged-in user only
+    # INTEGRATED CHANGE: Strictly pull only current user's trades
     response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
     df = pd.DataFrame(response.data)
 
     if df.empty:
-        st.info("Your private vault is empty. Log a trade in The Forge to see it here.")
+        st.info("Your journal is currently empty.")
         return
 
     df['date'] = pd.to_datetime(df['date'])
@@ -29,21 +28,30 @@ def render_journal_tab():
 
     st.divider()
 
-    # Iterate through the filtered dataframe
     for _, row in df[::-1].iterrows():
-        header = f"📁 {row['model_name']} — {row['date'].strftime('%Y-%m-%d')} — {row['result']}"
+        # Added more details to header
+        header = f"📁 {row['model_name']} | {row['market']} | {row['date'].strftime('%Y-%m-%d')} | {row['result']}"
         with st.expander(header):
-            c1, c2 = st.columns([2, 1])
+            c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
-                st.write(f"**TIME:** {row['entry_time']} | **TF:** {row['entry_tf']} | **SESS:** {row['session']}")
-                st.write(f"**RR:** {round(row['rr'], 2)}R | **RISK:** {row['risk_pc']}%")
-                st.info(f"**NOTES:** {row['notes']}")
+                st.write(f"**⏰ Time:** {row['entry_time']}")
+                st.write(f"**🌍 Session:** {row['session']}")
+                st.write(f"**⏱️ Duration:** {row['duration_mins']}m")
+            with c2:
+                st.write(f"**📏 TF:** {row['entry_tf']}")
+                st.write(f"**🛑 SL:** {row['sl_handles']}")
+                st.write(f"**🎯 TP:** {row['tp_handles']}")
+            with c3:
+                st.write(f"**🎲 Risk:** {row['risk_pc']}%")
+                st.write(f"**📊 Result:** {row['result']}")
                 
-                # Ensure the delete button also respects the user filter for safety
+                # INTEGRATED SECURITY: Delete only your own data
                 if st.button("🗑️ DELETE ENTRY", key=f"del_{row['id']}"):
                     supabase.table("trades").delete().eq("id", row['id']).eq("trader_username", st.session_state.user).execute()
-                    st.success("Entry Deleted.")
+                    st.success("Deleted.")
                     st.rerun()
-            with c2:
-                if row['screenshot_text']:
-                    st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
+            
+            st.divider()
+            st.info(f"**NOTES:** {row['notes']}")
+            if row['screenshot_text']:
+                st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)

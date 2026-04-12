@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 3. THE MULTI-USER CLOUD AUTHENTICATION ---
+# --- 3. THE NEW CLOUD AUTHENTICATION ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
     st.session_state.user = None
@@ -46,7 +46,7 @@ if not st.session_state.auth:
 
 # --- 4. DATA SYNCHRONIZATION (FILTERED BY USER) ---
 try:
-    # CRITICAL CHANGE: Only pull trades where trader_username matches the logged-in user
+    # INTEGRATED CHANGE: Added .eq filter to ensure user only pulls their own trades
     response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
     all_trades = pd.DataFrame(response.data)
 except Exception as e:
@@ -79,7 +79,7 @@ with tabs[2]:
         else:
             st.info(f"No LIVE trades found for {st.session_state.user}.")
     else:
-        st.info("Vault is currently empty.")
+        st.info("Vault is empty. Log your first trade.")
 
 with tabs[3]:
     st.subheader("🧪 BACKTEST PERFORMANCE")
@@ -90,7 +90,7 @@ with tabs[3]:
         else:
             st.info(f"No TEST trades found for {st.session_state.user}.")
     else:
-        st.info("Vault is currently empty.")
+        st.info("Vault is empty. Log your first backtest.")
 
 with tabs[4]: 
     render_journal_tab()
@@ -101,10 +101,9 @@ with tabs[5]:
 with tabs[6]: 
     render_compounder()
 
-# --- 6. SIDEBAR UTILITIES (Moved below Auth check to prevent AttributeErrors) ---
+# --- 6. SIDEBAR UTILITIES ---
 st.sidebar.title("TERMINAL_CONTROLS")
-if st.session_state.user:
-    st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
+st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
 
 if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.session_state.auth = False
@@ -112,4 +111,4 @@ if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.info("v8.0 Cloud Build | Private Session Active")
+st.sidebar.info("v8.0 Cloud Build | 2026 Edition")
