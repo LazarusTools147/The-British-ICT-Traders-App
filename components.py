@@ -43,7 +43,7 @@ def render_architect():
                     "screenshot_text": final_img
                 }
                 supabase.table("models").upsert(data).execute()
-                st.success(f"✔️ {name_in} UPDATED FOR {st.session_state.user}")
+                st.success(f"✔️ {name_in} SECURED FOR {st.session_state.user}")
                 st.rerun()
 
     if current_img_b64:
@@ -84,33 +84,19 @@ def render_forge():
             img_b64 = image_to_base64(img)
             rr = tp / sl if sl > 0 else 0
             
-            # --- THE FIX: ADDING THE USERNAME STAMP TO THE SAVE ---
             trade_data = {
-                "trader_username": st.session_state.user, # MUST BE HERE TO SAVE
-                "model_name": mod, 
-                "model_var": mvar, 
-                "type": env, 
-                "market": mkt,
-                "entry_time": tm, 
-                "entry_tf": tf, 
-                "session": sess, 
-                "result": res,
-                "risk_pc": rsk, 
-                "rr": rr, 
-                "sl_handles": sl, 
-                "tp_handles": tp,
-                "notes": nts, 
-                "date": str(dt), 
-                "duration_mins": dur, 
-                "screenshot_text": img_b64
+                "trader_username": st.session_state.user,
+                "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
+                "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
+                "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
+                "notes": nts, "date": str(dt), "duration_mins": dur, "screenshot_text": img_b64
             }
             try:
-                result = supabase.table("trades").insert(trade_data).execute()
-                if result.data:
-                    st.success("🎯 TRADE SECURED IN PRIVATE VAULT")
-                    st.rerun()
+                supabase.table("trades").insert(trade_data).execute()
+                st.success("🎯 TRADE SECURED IN PRIVATE VAULT")
+                st.rerun()
             except Exception as e:
-                st.error(f"DATABASE ERROR: {e}")
+                st.error(f"Error saving trade: {e}")
 
 def render_compounder():
     st.header("📈 LIFESTYLE COMPOUNDER")

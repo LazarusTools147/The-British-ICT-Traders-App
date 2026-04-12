@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 3. THE NEW CLOUD AUTHENTICATION ---
+# --- 3. THE MULTI-USER CLOUD AUTHENTICATION ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
     st.session_state.user = None
@@ -46,7 +46,7 @@ if not st.session_state.auth:
 
 # --- 4. DATA SYNCHRONIZATION (FILTERED BY USER) ---
 try:
-    # INTEGRATED CHANGE: Added .eq filter to ensure user only pulls their own trades
+    # Strictly pull only the current user's trades
     response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
     all_trades = pd.DataFrame(response.data)
 except Exception as e:
@@ -111,4 +111,4 @@ if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.info("v8.0 Cloud Build | 2026 Edition")
+st.sidebar.info("v8.0 Cloud Build | Private Session Active")
