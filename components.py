@@ -13,7 +13,6 @@ def render_architect():
     st.header(f"🏗️ {st.session_state.user}'s MODEL_ARCHITECT")
     supabase = get_supabase()
     
-    # INTEGRATED CHANGE: Filter models so user only sees their own
     response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
     existing_models = pd.DataFrame(response.data)
 
@@ -37,7 +36,7 @@ def render_architect():
             if name_in and logic_in:
                 final_img = image_to_base64(img_in) if img_in else current_img_b64
                 data = {
-                    "trader_username": st.session_state.user, # INTEGRATED STAMP
+                    "trader_username": st.session_state.user,
                     "name": name_in,
                     "logic": logic_in,
                     "sessions": ",".join(sess_in),
@@ -54,7 +53,6 @@ def render_forge():
     st.header(f"🔥 {st.session_state.user}'s FORGE")
     supabase = get_supabase()
     
-    # INTEGRATED CHANGE: Filter dropdown so user only selects their own models
     m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
     models = [r['name'] for r in m_resp.data]
     
@@ -73,27 +71,46 @@ def render_forge():
             sess = st.text_input("SESSION").upper()
             dur = st.number_input("DURATION (MINS)", 1, 1440, 15)
         with c3:
-            sl = st.number_input("SL", 0.1, 1000.0, 5.0)
-            tp = st.number_input("TP", 0.1, 5000.0, 15.0)
+            sl = st.number_input("SL (HANDLES)", 0.1, 1000.0, 5.0)
+            tp = st.number_input("TP (HANDLES)", 0.1, 5000.0, 15.0)
             res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
             rsk = st.number_input("RISK %", 0.1, 100.0, 1.0)
             dt = st.date_input("DATE", datetime.now())
             
-        nts = st.text_area("NOTES (Include Sloppy Market Checklist?)")
+        nts = st.text_area("NOTES")
         img = st.file_uploader("ENTRY SCREENSHOT", type=['png', 'jpg', 'jpeg'])
         
         if st.form_submit_button("FIRE INTO VAULT"):
             img_b64 = image_to_base64(img)
             rr = tp / sl if sl > 0 else 0
+            
+            # --- THE FIX: ADDING THE USERNAME STAMP TO THE SAVE ---
             trade_data = {
-                "trader_username": st.session_state.user, # INTEGRATED STAMP
-                "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
-                "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
-                "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
-                "notes": nts, "date": str(dt), "duration_mins": dur, "screenshot_text": img_b64
+                "trader_username": st.session_state.user, # MUST BE HERE TO SAVE
+                "model_name": mod, 
+                "model_var": mvar, 
+                "type": env, 
+                "market": mkt,
+                "entry_time": tm, 
+                "entry_tf": tf, 
+                "session": sess, 
+                "result": res,
+                "risk_pc": rsk, 
+                "rr": rr, 
+                "sl_handles": sl, 
+                "tp_handles": tp,
+                "notes": nts, 
+                "date": str(dt), 
+                "duration_mins": dur, 
+                "screenshot_text": img_b64
             }
-            supabase.table("trades").insert(trade_data).execute()
-            st.success("🎯 TRADE SECURED")
+            try:
+                result = supabase.table("trades").insert(trade_data).execute()
+                if result.data:
+                    st.success("🎯 TRADE SECURED IN PRIVATE VAULT")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"DATABASE ERROR: {e}")
 
 def render_compounder():
     st.header("📈 LIFESTYLE COMPOUNDER")
