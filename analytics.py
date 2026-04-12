@@ -31,6 +31,7 @@ def render_analytics(df, label):
         st.metric("Expectancy (Avg RR)", f"{round(avg_rr, 2)}R")
 
     # --- 2. THE DEEP DIVE TABS ---
+    # We are including every specific study category you requested
     st.divider()
     tabs = st.tabs(["💎 WINNERS", "🧨 LOSSES", "⚖️ BREAKEVEN", "🧠 HINDSIGHT", "📰 NEWS_IMPACT"])
 
@@ -46,7 +47,7 @@ def render_analytics(df, label):
                 st.write("**Winning Sessions**")
                 st.bar_chart(winners['session'].value_counts())
         else:
-            st.info("No winners recorded in this dataset.")
+            st.info("No winners recorded in this dataset yet.")
 
     with tabs[1]:
         st.subheader("Loss Distribution")
@@ -67,25 +68,32 @@ def render_analytics(df, label):
         be_df = df[df['result'] == 'BE']
         if not be_df.empty:
             st.write("**BE Frequency by Model**")
+            # Bar chart showing which models result in the most BEs
             st.bar_chart(be_df['model_name'].value_counts())
             st.write(f"Total Breakeven Trades: {len(be_df)}")
         else:
             st.info("No BE trades recorded.")
 
     with tabs[3]:
-        st.subheader("Hindsight & Study Volume")
-        # Check for hindsight column
+        st.subheader("🧠 HINDSIGHT & STUDY VOLUME")
+        # Filtering for trades where the Hindsight checkbox was ticked in the Forge
         hindsight_df = df[df.get('hindsight', False) == True]
         if not hindsight_df.empty:
-            st.write(f"Total Hindsight Studies: {len(hindsight_df)}")
-            st.bar_chart(hindsight_df['model_name'].value_counts())
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Studies per Model**")
+                st.bar_chart(hindsight_df['model_name'].value_counts())
+            with col2:
+                st.write(f"**Total Hindsight Studies:** {len(hindsight_df)}")
+                # Show distribution of results within hindsight studies
+                st.write("**Hindsight Outcomes**")
+                st.bar_chart(hindsight_df['result'].value_counts())
         else:
             st.info("No trades marked as 'Hindsight' in The Forge. Use this for chart studies.")
 
     with tabs[4]:
         st.subheader("News Impact Analysis")
         if 'news_impact' in df.columns:
-            # Using Plotly for a clean Pie Chart
             news_counts = df['news_impact'].value_counts().reset_index()
             news_counts.columns = ['Impact Level', 'Count']
             fig = px.pie(
@@ -93,6 +101,7 @@ def render_analytics(df, label):
                 values='Count', 
                 names='Impact Level', 
                 title="Trade Distribution by News Volatility",
+                template="plotly_dark",
                 color_discrete_sequence=px.colors.sequential.RdBu
             )
             st.plotly_chart(fig, use_container_width=True)
@@ -103,7 +112,7 @@ def render_analytics(df, label):
     st.divider()
     st.subheader("📈 CUMULATIVE RR GROWTH CURVE")
     
-    # Sort by date for accurate curve
+    # Sorting to ensure the time-series line is accurate
     df['date'] = pd.to_datetime(df['date'])
     curve_df = df.sort_values('date').copy()
     curve_df['cum_rr'] = curve_df['rr'].cumsum()
@@ -112,4 +121,10 @@ def render_analytics(df, label):
         curve_df, 
         x='date', 
         y='cum_rr', 
-        title=f"Cumulative RR
+        title=f"Cumulative RR Growth — {st.session_state.user}",
+        labels={'cum_rr': 'Cumulative RR', 'date': 'Trade Date'},
+        markers=True,
+        template="plotly_dark"
+    )
+    fig_curve.update_traces(line_color='#00FF00', line_width=2)
+    st.plotly_chart(fig_curve, use_container_width=True)
