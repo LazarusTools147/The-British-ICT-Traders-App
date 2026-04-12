@@ -1,115 +1,123 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
-def create_donut(df, column, title):
-    """Generates the professional Donut charts from your old build."""
-    if column not in df.columns or df[column].dropna().empty:
-        return None
-    counts = df[column].value_counts().reset_index()
-    counts.columns = [column, 'count']
-    fig = px.pie(counts, values='count', names=column, hole=0.7, 
-                 color_discrete_sequence=px.colors.sequential.RdBu)
-    fig.update_layout(
-        showlegend=False,
-        title={'text': title, 'y': 0.9, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top'},
-        margin=dict(t=30, b=10, l=10, r=10),
-        height=220,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color="white", size=10)
-    )
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    return fig
-
-def render_deep_dive(df, label, color_scale):
-    """The engine that recreates your Winners/Losses/Hindsight layout."""
-    if df.empty:
-        st.info(f"No {label} data available for this session.")
+def render_deep_dive_content(sub_df, title_prefix, color_hex):
+    """
+    Recreates the exact high-density layout from your screenshots.
+    Ensures Winners, Losses, and Hindsight all look identical.
+    """
+    if sub_df.empty:
+        st.info(f"No {title_prefix} data recorded yet.")
         return
 
-    # Top Row: Stats & Variations
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.write("**Model Performance (Volume)**")
-        st.bar_chart(df['model_name'].value_counts(), color=color_scale[0])
-    with c2:
-        avg_dur = df['duration_mins'].mean() if 'duration_mins' in df.columns else 0
-        st.metric(f"AVG {label} TIME", f"{round(avg_dur, 1)}m")
+    # --- TOP ROW: BAR CHART & VARIATION PIE ---
+    # Col proportions [2, 1] match your screenshot density
+    col_main, col_side = st.columns([2, 1])
+    
+    with col_main:
+        st.write(f"**{title_prefix} VOLUME BY TIME**")
+        # Volume by Entry Time (The big bar chart)
+        counts = sub_df['entry_time'].value_counts().sort_index()
+        st.bar_chart(counts, color=color_hex)
+        
+    with col_side:
+        # Avg Time Metric
+        avg_dur = sub_df['duration_mins'].mean() if 'duration_mins' in sub_df.columns else 0
+        st.metric(f"AVG {title_prefix} TIME", f"{round(avg_dur, 1)}m")
+        
+        # Variations Pie
         st.write("**Variations**")
-        var_fig = px.pie(df, names='model_var', hole=0.4, color_discrete_sequence=color_scale)
-        var_fig.update_layout(showlegend=False, height=200, margin=dict(t=0, b=0, l=0, r=0))
-        st.plotly_chart(var_fig, use_container_width=True)
+        fig_var = px.pie(sub_df, names='model_var', hole=0) 
+        fig_var.update_layout(showlegend=False, height=220, margin=dict(t=0, b=0, l=0, r=0))
+        st.plotly_chart(fig_var, use_container_width=True)
 
-    # Bottom Row: The 4 Donuts
+    # --- BOTTOM ROW: THE 4 DONUT ROW (Markets, Sessions, Timeframes, News) ---
+    st.write("") # Spacing
     d1, d2, d3, d4 = st.columns(4)
-    with d1:
-        f1 = create_donut(df, 'market', 'Markets')
-        if f1: st.plotly_chart(f1, use_container_width=True)
-    with d2:
-        f2 = create_donut(df, 'session', 'Sessions')
-        if f2: st.plotly_chart(f2, use_container_width=True)
-    with d3:
-        f3 = create_donut(df, 'entry_tf', 'Timeframes')
-        if f3: st.plotly_chart(f3, use_container_width=True)
-    with d4:
-        f4 = create_donut(df, 'news_impact', 'News')
-        if f4: st.plotly_chart(f4, use_container_width=True)
+    
+    # Configuration for the 4-donut horizontal alignment
+    donut_fields = [
+        (d1, 'market', 'Markets'),
+        (d2, 'session', 'Sessions'),
+        (d3, 'entry_tf', 'Timeframes'),
+        (d4, 'news_impact', 'News')
+    ]
+    
+    for col, field, title in donut_fields:
+        with col:
+            st.write(f"**{title}**")
+            if field in sub_df.columns and not sub_df[field].dropna().empty:
+                # Hole=0.7 creates that specific thin-donut look from your screen
+                fig = px.pie(sub_df, names=field, hole=0.7)
+                fig.update_layout(
+                    showlegend=False, 
+                    height=180, 
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                fig.update_traces(textposition='inside', textinfo='percent')
+                st.plotly_chart(fig, use_container_width=True)
 
 def render_analytics(df, label):
-    st.title(f"📈 GLOBAL KPI: {label}")
+    # --- 1. THE HEADER & GLOBAL KPI ---
+    st.markdown(f'<h1 style="color: white;">📊 {label} PERFORMANCE</h1>', unsafe_allow_html=True)
     
     if df.empty:
         st.info("Vault empty. Secure trades in The Forge to generate analytics.")
         return
 
-    # --- 1. TOP LEVEL METRICS ---
+    # Metric Strip
     m1, m2, m3, m4 = st.columns(4)
     wins = len(df[df['result'] == 'WIN'])
     total = len(df)
     win_rate = (wins / total * 100) if total > 0 else 0
     avg_dur = df['duration_mins'].mean() if 'duration_mins' in df.columns else 0
     avg_risk = df['risk_pc'].mean() if 'risk_pc' in df.columns else 0
-    avg_rr = df['rr'].mean() if 'rr' in df.columns else 0
+    avg_rr = df['rr'].sum() # Cumulative R for the metric
 
     m1.metric("WIN RATE", f"{round(win_rate, 1)}%")
     m2.metric("AVG DUR", f"{round(avg_dur, 1)}m")
-    m3.metric("AVG RISK", f"{round(avg_risk, 2)}%")
-    m4.metric("AVG RR", f"{round(avg_rr, 2)}R")
+    m3.metric("AVG RISK", f"{round(avg_risk, 1)}%")
+    m4.metric("TOTAL RR", f"{round(avg_rr, 1)}R")
 
-    # --- 2. THE EQUITY CURVE & PIE MIX ---
     st.divider()
-    g1, g2 = st.columns([2, 1])
-    with g1:
-        df['date'] = pd.to_datetime(df['date'])
-        curve = df.sort_values('date').copy()
-        curve['cum_rr'] = curve['rr'].cumsum()
-        fig_curve = px.line(curve, x='date', y='cum_rr', title="CUMULATIVE RR GROWTH")
-        fig_curve.update_traces(line_color='#00FF00')
-        st.plotly_chart(fig_curve, use_container_width=True)
-    with g2:
-        st.write("**RESULT DISTRIBUTION**")
-        res_fig = px.pie(df, names='result', hole=0.5, color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
-        st.plotly_chart(res_fig, use_container_width=True)
 
-    # --- 3. DEEP DIVE TABS ---
+    # --- 2. MAIN KPI ROW (RR BAR + RESULT DONUT) ---
+    c_left, c_right = st.columns([2, 1])
+    with c_left:
+        # Chart RR against entry time with result colors
+        st.write("**EQUITY FLOW BY ENTRY TIME**")
+        st.bar_chart(data=df, x='entry_time', y='rr', color='result')
+    with c_right:
+        st.write("**RESULT RATIO**")
+        fig_res = px.pie(
+            df, 
+            names='result', 
+            hole=0.6, 
+            color='result',
+            color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'}
+        )
+        fig_res.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=True)
+        st.plotly_chart(fig_res, use_container_width=True)
+
+    # --- 3. THE THREE DEEP DIVES ---
     st.divider()
-    tabs = st.tabs(["🏆 WINNERS DEEP-DIVE", "💀 LOSSES DEEP-DIVE", "⚖️ BE DEEP-DIVE", "🧠 HINDSIGHT DEEP-DIVE"])
-
-    with tabs[0]:
-        render_deep_dive(df[df['result'] == 'WIN'], "WIN", px.colors.sequential.Greens_r)
     
-    with tabs[1]:
-        render_deep_dive(df[df['result'] == 'LOSS'], "LOSS", px.colors.sequential.Reds_r)
+    # Winners Deep-Dive
+    with st.expander("🏆 WINNERS DEEP-DIVE"):
+        render_deep_dive_content(df[df['result'] == 'WIN'], "WIN", "#00FF00")
         
-    with tabs[2]:
-        render_deep_dive(df[df['result'] == 'BE'], "BE", px.colors.sequential.Greys_r)
+    # Losses Deep-Dive
+    with st.expander("💀 LOSSES DEEP-DIVE"):
+        render_deep_dive_content(df[df['result'] == 'LOSS'], "LOSS", "#FF0000")
 
-    with tabs[3]:
-        # Hindsight Deep Dive logic
+    # Hindsight Deep-Dive (Matches UI perfectly)
+    with st.expander("🧠 HINDSIGHT DEEP-DIVE"):
+        # Explicit check for the hindsight boolean column
         if 'hindsight' in df.columns:
             h_df = df[df['hindsight'] == True]
-            render_deep_dive(h_df, "STUDY", px.colors.sequential.Purples_r)
+            render_deep_dive_content(h_df, "STUDY", "#00A2FF")
         else:
             st.warning("Hindsight column missing in database.")
