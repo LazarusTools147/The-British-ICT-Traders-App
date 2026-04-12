@@ -23,19 +23,19 @@ def render_analytics(df, label):
 
     # --- 2. DEEP DIVES ---
     st.divider()
-    tabs = st.tabs(["💎 WINNERS_DEEP_DIVE", "🧨 LOSS_DEEP_DIVE", "⚖️ BE_DEEP_DIVE", "🧠 HINDSIGHT_STUDY"])
+    tabs = st.tabs(["💎 WINNERS", "🧨 LOSSES", "⚖️ BREAKEVEN", "🧠 HINDSIGHT", "📰 NEWS_IMPACT"])
 
     with tabs[0]:
         winners = df[df['result'] == 'WIN']
         if not winners.empty:
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader("Best Models (Wins)")
+                st.subheader("Best Models")
                 st.bar_chart(winners['model_name'].value_counts())
             with col2:
                 st.subheader("Wins by Session")
                 st.bar_chart(winners['session'].value_counts())
-        else: st.info("No winners recorded.")
+        else: st.info("No winners yet.")
 
     with tabs[1]:
         losses = df[df['result'] == 'LOSS']
@@ -47,27 +47,32 @@ def render_analytics(df, label):
             with col2:
                 st.subheader("Losses by Session")
                 st.bar_chart(losses['session'].value_counts())
-        else: st.info("No losses recorded.")
+        else: st.info("No losses yet.")
 
     with tabs[2]:
         be_trades = df[df['result'] == 'BE']
         if not be_trades.empty:
-            st.subheader("Breakeven Frequency by Model")
             st.bar_chart(be_trades['model_name'].value_counts())
         else: st.info("No BE trades recorded.")
 
     with tabs[3]:
         hindsight = df[df['hindsight'] == True]
         if not hindsight.empty:
-            st.subheader("Hindsight Study Volume")
-            st.write(f"Total Study Trades: {len(hindsight)}")
+            st.write(f"Study Count: {len(hindsight)}")
             st.bar_chart(hindsight['model_name'].value_counts())
         else: st.info("No hindsight trades marked.")
+
+    with tabs[4]:
+        if 'news_impact' in df.columns:
+            st.subheader("Trade Volume by News Impact")
+            fig = px.pie(df, names='news_impact', title="News Impact Distribution")
+            st.plotly_chart(fig, use_container_width=True)
+        else: st.info("News data not available.")
 
     # --- 3. EQUITY CURVE ---
     st.divider()
     st.subheader("📈 CUMULATIVE RR GROWTH")
     df = df.sort_values('date')
     df['cum_rr'] = df['rr'].cumsum()
-    fig = px.line(df, x='date', y='cum_rr', title="Equity Curve (RR)")
+    fig = px.line(df, x='date', y='cum_rr', title="RR Over Time")
     st.plotly_chart(fig, use_container_width=True)
