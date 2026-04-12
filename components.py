@@ -10,11 +10,11 @@ def image_to_base64(uploaded_file):
     return None
 
 def render_architect():
-    st.header("🏗️ MODEL_ARCHITECT (Cloud Edit Mode)")
+    st.header(f"🏗️ {st.session_state.user}'s STRATEGY LIBRARY")
     supabase = get_supabase()
     
-    # Fetch models for the Edit functionality
-    response = supabase.table("models").select("*").execute()
+    # PRIVACY FILTER: Only fetch models for THIS user
+    response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
     existing_models = pd.DataFrame(response.data)
 
     mode = st.radio("ARCHITECT MODE", ["CREATE NEW MODEL", "EDIT EXISTING"], horizontal=True)
@@ -37,27 +37,29 @@ def render_architect():
             if name_in and logic_in:
                 final_img = image_to_base64(img_in) if img_in else current_img_b64
                 data = {
+                    "trader_username": st.session_state.user, # OWNER TAG
                     "name": name_in,
                     "logic": logic_in,
                     "sessions": ",".join(sess_in),
                     "screenshot_text": final_img
                 }
                 supabase.table("models").upsert(data).execute()
-                st.success(f"✔️ {name_in} UPDATED IN CLOUD")
+                st.success(f"✔️ {name_in} SECURED FOR {st.session_state.user}")
                 st.rerun()
 
     if current_img_b64:
         st.image(f"data:image/png;base64,{current_img_b64}", caption="Current Model Schematic")
 
 def render_forge():
-    st.header("🔥 THE FORGE: EXECUTION LOG")
+    st.header(f"🔥 {st.session_state.user}'s FORGE")
     supabase = get_supabase()
     
-    m_resp = supabase.table("models").select("name").execute()
+    # PRIVACY FILTER: Only let user select their own models
+    m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
     models = [r['name'] for r in m_resp.data]
     
     if not models:
-        st.warning("No Models Found. Build one in Architect first."); return
+        st.warning("No Private Models Found. Build one in Architect first."); return
 
     with st.form("forge_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -84,13 +86,14 @@ def render_forge():
             img_b64 = image_to_base64(img)
             rr = tp / sl if sl > 0 else 0
             trade_data = {
+                "trader_username": st.session_state.user, # OWNER TAG
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
                 "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
                 "notes": nts, "date": str(dt), "duration_mins": dur, "screenshot_text": img_b64
             }
             supabase.table("trades").insert(trade_data).execute()
-            st.success("🎯 TRADE SECURED")
+            st.success("🎯 TRADE SECURED IN YOUR PRIVATE VAULT")
 
 def render_compounder():
     st.header("📈 LIFESTYLE COMPOUNDER")

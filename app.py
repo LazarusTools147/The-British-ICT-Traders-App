@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 3. THE NEW CLOUD AUTHENTICATION ---
+# --- 3. THE MULTI-USER CLOUD AUTHENTICATION ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
     st.session_state.user = None
@@ -27,14 +27,12 @@ if not st.session_state.auth:
     st.title("🔐 TERMINAL_ACCESS_REQUIRED")
     st.write("Institutional Trading Vault v8.0 | Multi-User Cloud")
     
-    # We use a form so hitting 'Enter' works naturally
     with st.form("login_form"):
         u_input = st.text_input("USERNAME").upper().strip()
         p_input = st.text_input("PASSWORD", type="password")
         submit = st.form_submit_button("ENTER VAULT")
         
         if submit:
-            # Query the users table for a matching username AND password
             user_query = supabase.table("users").select("*").eq("username", u_input).eq("password", p_input).execute()
             
             if len(user_query.data) > 0:
@@ -46,9 +44,10 @@ if not st.session_state.auth:
                 st.error("ACCESS DENIED: INVALID CREDENTIALS")
     st.stop()
 
-# --- 4. DATA SYNCHRONIZATION (SUPABASE) ---
+# --- 4. DATA SYNCHRONIZATION (FILTERED BY USER) ---
 try:
-    response = supabase.table("trades").select("*").execute()
+    # CRITICAL CHANGE: Only pull trades where trader_username matches the logged-in user
+    response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
     all_trades = pd.DataFrame(response.data)
 except Exception as e:
     st.error(f"Error fetching data: {e}")
@@ -78,9 +77,9 @@ with tabs[2]:
         if not live_trades.empty:
             render_analytics(live_trades, "LIVE")
         else:
-            st.info("No LIVE trades found. Start logging in The Forge.")
+            st.info(f"No LIVE trades found for {st.session_state.user}.")
     else:
-        st.info("Cloud Vault is empty. Log your first trade.")
+        st.info("Vault is currently empty.")
 
 with tabs[3]:
     st.subheader("🧪 BACKTEST PERFORMANCE")
@@ -89,9 +88,9 @@ with tabs[3]:
         if not test_trades.empty:
             render_analytics(test_trades, "TEST")
         else:
-            st.info("No TEST trades found. Time to hit the charts.")
+            st.info(f"No TEST trades found for {st.session_state.user}.")
     else:
-        st.info("Cloud Vault is empty. Log your first backtest.")
+        st.info("Vault is currently empty.")
 
 with tabs[4]: 
     render_journal_tab()
@@ -102,9 +101,10 @@ with tabs[5]:
 with tabs[6]: 
     render_compounder()
 
-# --- 6. SIDEBAR UTILITIES ---
+# --- 6. SIDEBAR UTILITIES (Moved below Auth check to prevent AttributeErrors) ---
 st.sidebar.title("TERMINAL_CONTROLS")
-st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
+if st.session_state.user:
+    st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
 
 if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.session_state.auth = False
@@ -112,4 +112,4 @@ if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.info("v8.0 Cloud Build | 2026 Edition")
+st.sidebar.info("v8.0 Cloud Build | Private Session Active")
