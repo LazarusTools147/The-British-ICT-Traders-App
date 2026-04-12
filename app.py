@@ -1,132 +1,129 @@
 import streamlit as st
 import pandas as pd
-import base64
-from datetime import datetime
-from database import get_supabase
+from database import init_db, get_supabase
+from components import render_architect, render_forge, render_compounder
+from analytics import render_analytics
+from journal import render_journal_tab
+from dca import render_dca_tab
 
-def image_to_base64(uploaded_file):
-    if uploaded_file is not None:
-        return base64.b64encode(uploaded_file.read()).decode('utf-8')
-    return None
+# --- 1. INITIALIZE CLOUD CONNECTION ---
+# This connects your local VS Code environment to the Supabase Cloud
+init_db()
+supabase = get_supabase()
 
-def render_architect():
-    st.header(f"🏗️ {st.session_state.user}'s MODEL_ARCHITECT")
-    supabase = get_supabase()
+# --- 2. GLOBAL PAGE CONFIG ---
+st.set_page_config(
+    page_title="ICT_MASTER_TERMINAL_V8.0",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# --- 3. THE NEW CLOUD AUTHENTICATION ---
+# This block handles the multi-user gatekeeping. 
+# If a new user is added to the DB, they get a fresh slate automatically.
+if 'auth' not in st.session_state:
+    st.session_state.auth = False
+    st.session_state.user = None
+
+if not st.session_state.auth:
+    st.title("🔐 TERMINAL_ACCESS_REQUIRED")
+    st.write("Institutional Trading Vault v8.0 | Multi-User Cloud Infrastructure")
     
-    response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
-    existing_models = pd.DataFrame(response.data)
-
-    mode = st.radio("ARCHITECT MODE", ["CREATE NEW MODEL", "EDIT EXISTING"], horizontal=True)
-    m_name, m_logic, m_sess, current_img_b64 = "", "", [], None
-
-    if mode == "EDIT EXISTING" and not existing_models.empty:
-        target = st.selectbox("SELECT MODEL TO REFINE", existing_models['name'].tolist())
-        row = existing_models[existing_models['name'] == target].iloc[0]
-        m_name, m_logic = row['name'], row['logic']
-        m_sess = row['sessions'].split(",") if row['sessions'] else []
-        current_img_b64 = row.get('screenshot_text')
-
-    with st.form("model_form"):
-        name_in = st.text_input("MODEL NAME", value=m_name).upper()
-        sess_in = st.multiselect("VALID SESSIONS", ["ASIA", "LONDON", "NY AM", "NY PM"], default=m_sess)
-        logic_in = st.text_area("CORE LOGIC & FVG REQUIREMENTS", value=m_logic, height=250)
-        img_in = st.file_uploader("UPLOAD IDEAL SCHEMATIC", type=['png', 'jpg', 'jpeg'])
+    # Using a form so hitting 'Enter' on the keyboard submits the login
+    with st.form("login_form"):
+        u_input = st.text_input("USERNAME").upper().strip()
+        p_input = st.text_input("PASSWORD", type="password")
+        submit = st.form_submit_button("ENTER VAULT")
         
-        if st.form_submit_button("SECURE STRATEGY TO CLOUD"):
-            if name_in and logic_in:
-                final_img = image_to_base64(img_in) if img_in else current_img_b64
-                data = {
-                    "trader_username": st.session_state.user,
-                    "name": name_in,
-                    "logic": logic_in,
-                    "sessions": ",".join(sess_in),
-                    "screenshot_text": final_img
-                }
-                supabase.table("models").upsert(data).execute()
-                st.success(f"✔️ {name_in} SECURED FOR {st.session_state.user}")
-                st.rerun()
-
-    if current_img_b64:
-        st.image(f"data:image/png;base64,{current_img_b64}", caption="Current Model Schematic")
-
-def render_forge():
-    st.header(f"🔥 {st.session_state.user}'s FORGE")
-    supabase = get_supabase()
-    
-    m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
-    models = [r['name'] for r in m_resp.data]
-    
-    if not models:
-        st.warning("No Private Models Found. Build one in Architect first."); return
-
-    with st.form("forge_form", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            env = st.radio("ENVIRONMENT", ["LIVE", "BACKTEST/DEMO"], horizontal=True)
-            mod = st.selectbox("MODEL", models)
-            mvar = st.text_input("VARIATION").upper()
-            mkt = st.text_input("MARKET").upper()
-            is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
-            news_impact = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
-        with c2:
-            tm, tf = st.text_input("TIME"), st.text_input("TF").upper()
-            sess = st.text_input("SESSION").upper()
-            dur = st.number_input("DURATION (MINS)", 1, 1440, 15)
-        with c3:
-            sl = st.number_input("SL (HANDLES)", 0.1, 1000.0, 5.0)
-            tp = st.number_input("TP (HANDLES)", 0.1, 5000.0, 15.0)
-            res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
-            rsk = st.number_input("RISK %", 0.1, 100.0, 1.0)
-            dt = st.date_input("DATE", datetime.now())
+        if submit:
+            # Query the users table for a matching username AND password
+            user_query = supabase.table("users").select("*").eq("username", u_input).eq("password", p_input).execute()
             
-        nts = st.text_area("NOTES")
-        img = st.file_uploader("ENTRY SCREENSHOT", type=['png', 'jpg', 'jpeg'])
-        
-        if st.form_submit_button("FIRE INTO VAULT"):
-            img_b64 = image_to_base64(img)
-            rr = tp / sl if sl > 0 else 0
-            
-            trade_data = {
-                "trader_username": st.session_state.user,
-                "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
-                "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
-                "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
-                "notes": nts, "date": str(dt), "duration_mins": dur, 
-                "screenshot_text": img_b64, "hindsight": is_hindsight,
-                "news_impact": news_impact
-            }
-            try:
-                supabase.table("trades").insert(trade_data).execute()
-                st.success("🎯 TRADE SECURED IN PRIVATE VAULT")
+            if len(user_query.data) > 0:
+                st.session_state.auth = True
+                st.session_state.user = u_input
+                st.success(f"ACCESS GRANTED: WELCOME {u_input}")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Error saving trade: {e}")
+            else:
+                st.error("ACCESS DENIED: INVALID CREDENTIALS. CHECK SUPABASE USERS TABLE.")
+    st.stop()
 
-def render_compounder():
-    st.header("📈 LIFESTYLE COMPOUNDER")
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        start = st.number_input("STARTING CAPITAL ($)", value=5000)
-        ret = st.number_input("MONTHLY RETURN (%)", value=5.0)
-        yrs = st.number_input("YEARS", value=5)
-        dep = st.number_input("MONTHLY DEPOSIT ($)", value=100)
-        inc = st.number_input("YEARLY DEPOSIT INCREASE (%)", value=10.0)
-        wit = st.number_input("RECURRING WITHDRAWAL ($)", value=0)
-        freq = st.selectbox("WITHDRAWAL FREQUENCY", ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"])
+# --- 4. DATA SYNCHRONIZATION (FILTERED BY PRIVATE USERNAME) ---
+# This is the "Privacy Wall" that separates your data from Fin's data.
+try:
+    # We only pull trades where the trader_username matches the logged-in user
+    response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
+    all_trades = pd.DataFrame(response.data)
+except Exception as e:
+    st.error(f"SYSTEM_ERROR: Unable to sync private vault data. {e}")
+    all_trades = pd.DataFrame()
 
-    freq_map = {"WEEKLY": 4, "MONTHLY": 1, "QUARTERLY": 3, "YEARLY": 12}
-    bal, cur_dep, data = start, dep, []
-    
-    for m in range(1, int(yrs * 12) + 1):
-        bal = (bal * (1 + (ret / 100))) + cur_dep
-        if m % freq_map[freq] == 0:
-            bal -= (wit * (4 if freq == "WEEKLY" else 1))
-        if m % 12 == 0:
-            cur_dep *= (1 + (inc / 100))
-            data.append({"Year": m // 12, "Balance": round(max(0, bal), 2), "Monthly Deposit": round(cur_dep, 2)})
-    
-    with c2:
-        df = pd.DataFrame(data)
-        if not df.empty:
-            st.line_chart(df.set_index("Year")["Balance"])
-            st.table(df)
+# --- 5. NAVIGATION (THE TABS) ---
+tabs = st.tabs([
+    "🏗️ ARCHITECT", 
+    "🔥 THE_FORGE", 
+    "📊 LIVE_DATA", 
+    "🧪 TEST_DATA", 
+    "📓 JOURNAL", 
+    "📉 PORTFOLIO/DCA", 
+    "📈 COMPOUNDER"
+])
+
+with tabs[0]: 
+    # Architect is now filtered to show only YOUR saved models
+    render_architect()
+
+with tabs[1]: 
+    # Forge is now filtered to only allow execution on YOUR models
+    render_forge()
+
+with tabs[2]:
+    st.subheader("📊 LIVE PERFORMANCE")
+    if not all_trades.empty:
+        # Filter for LIVE trades only within the user's private dataset
+        live_trades = all_trades[all_trades['type'] == 'LIVE']
+        if not live_trades.empty:
+            render_analytics(live_trades, "LIVE")
+        else:
+            st.info(f"No LIVE trades found in the vault for {st.session_state.user}. Log your first live execution in The Forge.")
+    else:
+        st.info("Cloud Vault is currently empty. Start logging to generate analytics.")
+
+with tabs[3]:
+    st.subheader("🧪 BACKTEST PERFORMANCE")
+    if not all_trades.empty:
+        # Filter for BACKTEST trades only within the user's private dataset
+        test_trades = all_trades[all_trades['type'] == 'BACKTEST/DEMO']
+        if not test_trades.empty:
+            render_analytics(test_trades, "TEST")
+        else:
+            st.info(f"No TEST trades found in the vault for {st.session_state.user}. Time to hit the charts and backtest.")
+    else:
+        st.info("Cloud Vault is currently empty. Your backtesting data will appear here.")
+
+with tabs[4]: 
+    # Journal now includes the Winners Deep Dive and Full Stats
+    render_journal_tab()
+
+with tabs[5]: 
+    # Portfolio is now private and user-specific
+    render_dca_tab()
+
+with tabs[6]: 
+    # The Lifestyle Compounder remains a global utility
+    render_compounder()
+
+# --- 6. SIDEBAR UTILITIES ---
+st.sidebar.title("TERMINAL_CONTROLS")
+st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
+
+if st.sidebar.button("🔒 SECURE_LOGOUT"):
+    # Clear session and force return to login gate
+    st.session_state.auth = False
+    st.session_state.user = None
+    st.rerun()
+
+st.sidebar.divider()
+st.sidebar.info("v8.0 Multi-User Cloud Build | 2026 Institutional Edition")
+st.sidebar.write("System Status: **🟢 ONLINE**")
