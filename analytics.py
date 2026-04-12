@@ -1,131 +1,115 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
-def render_analytics(df, label):
-    st.header(f"📊 {label} PERFORMANCE ANALYTICS")
-    st.write(f"Comprehensive statistical breakdown for {st.session_state.user}.")
-    
+def create_donut(df, column, title):
+    """Generates the professional Donut charts from your old build."""
+    if column not in df.columns or df[column].dropna().empty:
+        return None
+    counts = df[column].value_counts().reset_index()
+    counts.columns = [column, 'count']
+    fig = px.pie(counts, values='count', names=column, hole=0.7, 
+                 color_discrete_sequence=px.colors.sequential.RdBu)
+    fig.update_layout(
+        showlegend=False,
+        title={'text': title, 'y': 0.9, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top'},
+        margin=dict(t=30, b=10, l=10, r=10),
+        height=220,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color="white", size=10)
+    )
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    return fig
+
+def render_deep_dive(df, label, color_scale):
+    """The engine that recreates your Winners/Losses/Hindsight layout."""
     if df.empty:
-        st.info("Log trades in The Forge to generate performance data.")
+        st.info(f"No {label} data available for this session.")
         return
 
-    # --- 1. CORE PERFORMANCE METRICS ---
-    c1, c2, c3, c4 = st.columns(4)
-    total_trades = len(df)
-    wins = len(df[df['result'] == 'WIN'])
-    losses = len(df[df['result'] == 'LOSS'])
-    be_trades = len(df[df['result'] == 'BE'])
+    # Top Row: Stats & Variations
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        st.write("**Model Performance (Volume)**")
+        st.bar_chart(df['model_name'].value_counts(), color=color_scale[0])
+    with c2:
+        avg_dur = df['duration_mins'].mean() if 'duration_mins' in df.columns else 0
+        st.metric(f"AVG {label} TIME", f"{round(avg_dur, 1)}m")
+        st.write("**Variations**")
+        var_fig = px.pie(df, names='model_var', hole=0.4, color_discrete_sequence=color_scale)
+        var_fig.update_layout(showlegend=False, height=200, margin=dict(t=0, b=0, l=0, r=0))
+        st.plotly_chart(var_fig, use_container_width=True)
+
+    # Bottom Row: The 4 Donuts
+    d1, d2, d3, d4 = st.columns(4)
+    with d1:
+        f1 = create_donut(df, 'market', 'Markets')
+        if f1: st.plotly_chart(f1, use_container_width=True)
+    with d2:
+        f2 = create_donut(df, 'session', 'Sessions')
+        if f2: st.plotly_chart(f2, use_container_width=True)
+    with d3:
+        f3 = create_donut(df, 'entry_tf', 'Timeframes')
+        if f3: st.plotly_chart(f3, use_container_width=True)
+    with d4:
+        f4 = create_donut(df, 'news_impact', 'News')
+        if f4: st.plotly_chart(f4, use_container_width=True)
+
+def render_analytics(df, label):
+    st.title(f"📈 GLOBAL KPI: {label}")
     
-    win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
-    total_rr = df['rr'].sum()
-    avg_rr = total_rr / total_trades if total_trades > 0 else 0
+    if df.empty:
+        st.info("Vault empty. Secure trades in The Forge to generate analytics.")
+        return
 
-    with c1: 
-        st.metric("Total Executions", total_trades)
-    with c2: 
-        st.metric("Win Rate", f"{round(win_rate, 1)}%", delta=f"{wins}W / {losses}L")
-    with c3: 
-        st.metric("Total RR Growth", f"{round(total_rr, 2)}R")
-    with c4: 
-        st.metric("Expectancy (Avg RR)", f"{round(avg_rr, 2)}R")
+    # --- 1. TOP LEVEL METRICS ---
+    m1, m2, m3, m4 = st.columns(4)
+    wins = len(df[df['result'] == 'WIN'])
+    total = len(df)
+    win_rate = (wins / total * 100) if total > 0 else 0
+    avg_dur = df['duration_mins'].mean() if 'duration_mins' in df.columns else 0
+    avg_risk = df['risk_pc'].mean() if 'risk_pc' in df.columns else 0
+    avg_rr = df['rr'].mean() if 'rr' in df.columns else 0
 
-    # --- 2. THE DEEP DIVE TABS ---
+    m1.metric("WIN RATE", f"{round(win_rate, 1)}%")
+    m2.metric("AVG DUR", f"{round(avg_dur, 1)}m")
+    m3.metric("AVG RISK", f"{round(avg_risk, 2)}%")
+    m4.metric("AVG RR", f"{round(avg_rr, 2)}R")
+
+    # --- 2. THE EQUITY CURVE & PIE MIX ---
     st.divider()
-    tabs = st.tabs(["💎 WINNERS", "🧨 LOSSES", "⚖️ BREAKEVEN", "🧠 HINDSIGHT", "📰 NEWS_IMPACT"])
+    g1, g2 = st.columns([2, 1])
+    with g1:
+        df['date'] = pd.to_datetime(df['date'])
+        curve = df.sort_values('date').copy()
+        curve['cum_rr'] = curve['rr'].cumsum()
+        fig_curve = px.line(curve, x='date', y='cum_rr', title="CUMULATIVE RR GROWTH")
+        fig_curve.update_traces(line_color='#00FF00')
+        st.plotly_chart(fig_curve, use_container_width=True)
+    with g2:
+        st.write("**RESULT DISTRIBUTION**")
+        res_fig = px.pie(df, names='result', hole=0.5, color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
+        st.plotly_chart(res_fig, use_container_width=True)
+
+    # --- 3. DEEP DIVE TABS ---
+    st.divider()
+    tabs = st.tabs(["🏆 WINNERS DEEP-DIVE", "💀 LOSSES DEEP-DIVE", "⚖️ BE DEEP-DIVE", "🧠 HINDSIGHT DEEP-DIVE"])
 
     with tabs[0]:
-        st.subheader("Winner Distribution")
-        winners = df[df['result'] == 'WIN']
-        if not winners.empty:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Top Performing Models (Wins)**")
-                st.bar_chart(winners['model_name'].value_counts())
-            with col2:
-                st.write("**Winning Sessions**")
-                st.bar_chart(winners['session'].value_counts())
-        else:
-            st.info("No winners recorded in this dataset yet.")
-
+        render_deep_dive(df[df['result'] == 'WIN'], "WIN", px.colors.sequential.Greens_r)
+    
     with tabs[1]:
-        st.subheader("Loss Distribution")
-        loss_df = df[df['result'] == 'LOSS']
-        if not loss_df.empty:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Highest Failure Models**")
-                st.bar_chart(loss_df['model_name'].value_counts())
-            with col2:
-                st.write("**Losing Sessions**")
-                st.bar_chart(loss_df['session'].value_counts())
-        else:
-            st.info("No losses recorded. Keep protecting that capital.")
-
+        render_deep_dive(df[df['result'] == 'LOSS'], "LOSS", px.colors.sequential.Reds_r)
+        
     with tabs[2]:
-        st.subheader("Breakeven Analysis")
-        be_df = df[df['result'] == 'BE']
-        if not be_df.empty:
-            st.write("**BE Frequency by Model**")
-            st.bar_chart(be_df['model_name'].value_counts())
-            st.write(f"Total Breakeven Trades: {len(be_df)}")
-        else:
-            st.info("No BE trades recorded.")
+        render_deep_dive(df[df['result'] == 'BE'], "BE", px.colors.sequential.Greys_r)
 
     with tabs[3]:
-        st.subheader("🧠 HINDSIGHT & STUDY VOLUME")
-        # SAFETY CHECK: Verify column exists before filtering to prevent app crash
+        # Hindsight Deep Dive logic
         if 'hindsight' in df.columns:
-            hindsight_df = df[df['hindsight'] == True]
-            if not hindsight_df.empty:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("**Studies per Model**")
-                    st.bar_chart(hindsight_df['model_name'].value_counts())
-                with col2:
-                    st.write(f"**Total Hindsight Studies:** {len(hindsight_df)}")
-                    st.write("**Hindsight Outcomes**")
-                    st.bar_chart(hindsight_df['result'].value_counts())
-            else:
-                st.info("No trades marked as 'Hindsight' in The Forge yet.")
+            h_df = df[df['hindsight'] == True]
+            render_deep_dive(h_df, "STUDY", px.colors.sequential.Purples_r)
         else:
-            st.warning("⚠️ COLUMN MISSING: Add 'hindsight' (bool) to your Supabase trades table to activate this tab.")
-
-    with tabs[4]:
-        st.subheader("News Impact Analysis")
-        # SAFETY CHECK: Verify column exists before rendering Pie Chart
-        if 'news_impact' in df.columns:
-            news_counts = df['news_impact'].value_counts().reset_index()
-            news_counts.columns = ['Impact Level', 'Count']
-            fig = px.pie(
-                news_counts, 
-                values='Count', 
-                names='Impact Level', 
-                title="Trade Distribution by News Volatility",
-                template="plotly_dark",
-                color_discrete_sequence=px.colors.sequential.RdBu
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("⚠️ COLUMN MISSING: Add 'news_impact' (text) to your Supabase trades table to activate this tab.")
-
-    # --- 3. EQUITY CURVE (RR GROWTH OVER TIME) ---
-    st.divider()
-    st.subheader("📈 CUMULATIVE RR GROWTH CURVE")
-    
-    # Sorting to ensure the time-series line is accurate
-    df['date'] = pd.to_datetime(df['date'])
-    curve_df = df.sort_values('date').copy()
-    curve_df['cum_rr'] = curve_df['rr'].cumsum()
-    
-    fig_curve = px.line(
-        curve_df, 
-        x='date', 
-        y='cum_rr', 
-        title=f"Cumulative RR Growth — {st.session_state.user}",
-        labels={'cum_rr': 'Cumulative RR', 'date': 'Trade Date'},
-        markers=True,
-        template="plotly_dark"
-    )
-    fig_curve.update_traces(line_color='#00FF00', line_width=2)
-    st.plotly_chart(fig_curve, use_container_width=True)
+            st.warning("Hindsight column missing in database.")

@@ -4,11 +4,11 @@ from datetime import datetime, timedelta
 from database import get_supabase
 
 def render_journal_tab():
-    st.header(f"📓 {st.session_state.user}'s PRIVATE JOURNAL")
-    st.write("Institutional Trade Log & Performance Review")
+    # Restoring the Red Institutional Header from your old build
+    st.markdown('<h2 style="color: #FF4B4B;">📓 TRADE JOURNAL</h2>', unsafe_allow_html=True)
+    st.write(f"Logged as: {st.session_state.user}")
     supabase = get_supabase()
     
-    # PRIVACY FILTER: Strictly pull only the current user's trades
     try:
         response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
         df = pd.DataFrame(response.data)
@@ -17,32 +17,28 @@ def render_journal_tab():
         return
 
     if df.empty:
-        st.info("Your private vault is currently empty. Log a trade in The Forge to see it here.")
+        st.info("Your private vault is currently empty.")
         return
 
-    # --- 1. WINNERS DEEP DIVE SECTION ---
-    st.subheader("💎 WINNERS DEEP DIVE")
+    # --- 1. WINNERS DEEP DIVE (TOP STATS) ---
     winners = df[df['result'] == 'WIN']
     if not winners.empty:
+        st.subheader("💎 WINNERS DEEP DIVE")
         c1, c2, c3 = st.columns(3)
         with c1:
-            avg_rr = winners['rr'].mean()
-            st.metric("Avg Winner RR", f"{round(avg_rr, 2)}R")
+            st.metric("Avg Winner RR", f"{round(winners['rr'].mean(), 2)}R")
         with c2:
-            best_model = winners['model_name'].mode()[0]
-            st.metric("Most Profitable Model", best_model)
+            st.metric("Top Model", winners['model_name'].mode()[0])
         with c3:
-            # Handle duration safety if column is empty
             avg_dur = winners['duration_mins'].mean() if 'duration_mins' in winners.columns else 0
             st.metric("Avg Win Duration", f"{round(avg_dur, 1)}m")
-    else:
-        st.info("Log some winning trades to activate the Deep Dive analytics.")
-
+    
     st.divider()
 
     # --- 2. JOURNAL FILTERS ---
     df['date'] = pd.to_datetime(df['date'])
-    cal_filter = st.radio("JOURNAL TIMEFRAME", ["All", "Month", "Week", "Day"], horizontal=True)
+    # Swapped radio for selectbox to match high-density UI
+    cal_filter = st.selectbox("TIMEFRAME", ["All", "Month", "Week", "Day"])
     
     now = datetime.now()
     if cal_filter == "Month": 
@@ -53,68 +49,54 @@ def render_journal_tab():
         df = df[df['date'].dt.date == now.date()]
 
     # --- 3. TRADE ENTRIES (REVERSE CHRONOLOGICAL) ---
-    for _, row in df[::-1].iterrows():
-        color = "🟢" if row['result'] == "WIN" else "🔴" if row['result'] == "LOSS" else "🟡"
-        header = f"{color} {row['model_name']} | {row['market']} | {row['date'].strftime('%d %b %Y')} | {round(row['rr'], 2)}R"
+    # Sorting newest at the top
+    for _, row in df.sort_values('date', ascending=False).iterrows():
+        res = row['result']
+        color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
+        icon = "🟢" if res == "WIN" else "🔴" if res == "LOSS" else "🟡"
+        header = f"{icon} {row['model_name']} | {row['market']} | {row['date'].strftime('%d %b %Y')} | {round(row['rr'], 2)}R"
         
         with st.expander(header):
-            # THE FULL STAT READOUT
+            # Restore 3-Column high density layout from old build
             c1, c2, c3 = st.columns(3)
             with c1:
-                st.write(f"**⏰ Entry Time:** {row.get('entry_time', 'N/A')}")
-                st.write(f"**🌍 Session:** {row.get('session', 'N/A')}")
-                st.write(f"**⏱️ Duration:** {row.get('duration_mins', 0)}m")
-                # Safety check for news_impact
-                st.write(f"**📰 News Impact:** {row.get('news_impact', 'NONE')}")
+                st.markdown("**EXECUTION**")
+                st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
+                st.write(f"SESS: `{row.get('session', 'N/A')}`")
+                st.write(f"DUR: `{row.get('duration_mins', 0)}m`")
+                st.write(f"NEWS: `{row.get('news_impact', 'NONE')}`")
             with c2:
-                st.write(f"**📏 Timeframe:** {row.get('entry_tf', 'N/A')}")
-                st.write(f"**🎯 TP Handles:** {row.get('tp_handles', 0)}")
-                st.write(f"**🛑 SL Handles:** {row.get('sl_handles', 0)}")
+                st.markdown("**TECHNICAL**")
+                st.write(f"TF: `{row.get('entry_tf', 'N/A')}`")
+                st.write(f"TP: `{row.get('tp_handles', 0)}` handles")
+                st.write(f"SL: `{row.get('sl_handles', 0)}` handles")
             with c3:
-                st.write(f"**🎲 Risk:** {row.get('risk_pc', 0)}%")
-                st.write(f"**📊 Result:** {row['result']}")
-                # Safety check for hindsight
+                st.markdown("**RISK**")
+                st.write(f"RISK: `{row.get('risk_pc', 0)}%`")
+                st.write(f"RESULT: :{color}[**{res}**]")
                 h_val = row.get('hindsight', False)
-                st.write(f"**🧠 Mode:** {'✅ HINDSIGHT' if h_val else '❌ LIVE'}")
+                st.write(f"MODE: `{'HINDSIGHT' if h_val else 'LIVE'}`")
                 
-                # DELETE FUNCTIONALITY
-                if st.button("🗑️ DELETE ENTRY", key=f"del_{row['id']}"):
-                    supabase.table("trades").delete().eq("id", row['id']).eq("trader_username", st.session_state.user).execute()
-                    st.success("Purged.")
+                if st.button("🗑️ PURGE", key=f"del_{row['id']}"):
+                    supabase.table("trades").delete().eq("id", row['id']).execute()
                     st.rerun()
             
             st.divider()
-            
-            # NOTES & SCREENSHOT
             st.info(f"**CONFLUENCE NOTES:**\n\n{row['notes']}")
+            
             if row.get('screenshot_text'):
                 st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
 
-            # --- 4. EDIT FUNCTIONALITY ---
-            st.divider()
-            # Toggle edit mode in session state
-            edit_requested = st.button("✏️ EDIT DETAILS", key=f"edit_btn_{row['id']}")
-            if edit_requested:
+            # --- 4. EDIT LOGIC ---
+            if st.button("✏️ EDIT DETAILS", key=f"edit_btn_{row['id']}"):
                 st.session_state.editing_id = row['id']
             
             if st.session_state.get('editing_id') == row['id']:
-                with st.form(f"edit_form_{row['id']}"):
-                    st.subheader("Update Execution Data")
+                with st.form(f"edit_{row['id']}"):
                     new_notes = st.text_area("Update Notes", value=row['notes'], height=150)
-                    # Find index for result selectbox
-                    res_options = ["WIN", "LOSS", "BE"]
-                    res_index = res_options.index(row['result']) if row['result'] in res_options else 0
-                    new_res = st.selectbox("Update Result", res_options, index=res_index)
+                    new_res = st.selectbox("Update Result", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(row['result']))
                     
-                    c_save, c_cancel = st.columns(2)
-                    with c_save:
-                        if st.form_submit_button("💾 SAVE"):
-                            update_data = {"notes": new_notes, "result": new_res}
-                            supabase.table("trades").update(update_data).eq("id", row['id']).eq("trader_username", st.session_state.user).execute()
-                            st.session_state.editing_id = None
-                            st.success("Updated!")
-                            st.rerun()
-                    with c_cancel:
-                        if st.form_submit_button("❌ CANCEL"):
-                            st.session_state.editing_id = None
-                            st.rerun()
+                    if st.form_submit_button("💾 SAVE"):
+                        supabase.table("trades").update({"notes": new_notes, "result": new_res}).eq("id", row['id']).execute()
+                        st.session_state.editing_id = None
+                        st.rerun()
