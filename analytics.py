@@ -1,113 +1,110 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from datetime import datetime, timedelta
+from database import get_supabase
 
-def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
-    """
-    Rebuilds the deep dive with a high-density 5+ donut layout.
-    Features: Model Variation, Market, Session, TF, News, and Entry Type.
-    """
-    if sub_df.empty:
-        st.info(f"No {title_prefix} data recorded yet.")
-        return
+def render_journal_tab():
+    st.markdown('<h2 style="color: #FF4B4B;">📓 THE JOURNAL</h2>', unsafe_allow_html=True)
+    supabase = get_supabase()
+    try:
+        response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
+        df = pd.DataFrame(response.data)
+    except Exception as e:
+        st.error(f"Error: {e}"); return
+    if df.empty:
+        st.info("Vault empty."); return
+    live_c = len(df[(df.get('type') == 'LIVE') & (df.get('hindsight') == False)])
+    demo_c = len(df[(df.get('type') == 'BACKTEST/DEMO') & (df.get('hindsight') == False)])
+    hind_c = len(df[df.get('hindsight') == True])
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.write("**MODELS**")
+        fig = px.pie(df, names='model_name', hole=0.6)
+        fig.update_layout(showlegend=False, height=180, margin=dict(t=0,b=0,l=0,r=0))
+        st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        st.write("**ENTRIES**")
+        if 'entry_type' in df.columns:
+            fig2 = px.pie(df, names='entry_type', hole=0.6)
+            fig2.update_layout(showlegend=False, height=180, margin=dict(t=0,b=0,l=0,r=0))
+            st.plotly_chart(fig2, use_container_width=True)
+    with c3:
+        st.metric("LIVE", live_c); st.metric("DEMO", demo_c); st.metric("STUDY", hind_c)
+    st.divider()
+    cal = st.radio("TF", ["All Trades", "By Year", "By Month", "By Week", "By Day"], horizontal=True, label_visibility="collapsed")
+    f1, f2, f3 = st.columns(3)
+    with f1: s_mod = st.selectbox("MODEL", ["ALL"] + sorted(df['model_name'].unique().tolist()))
+    with f2: s_var = st.selectbox("VAR", ["ALL"] + sorted(df.get('model_var', pd.Series(['ALL'])).dropna().unique().tolist()))
+    with f3: s_res = st.selectbox("RES", ["ALL", "WIN", "LOSS", "BE"])
+    df['date_dt'] = pd.to_datetime(df['date'])
+    tday = datetime.now().date()
+    if cal == "By Week": df = df[df['date_dt'].dt.date >= (tday - timedelta(days=7))]
+    elif cal == "By Day": df = df[df['date_dt'].dt.date == tday]
+    if s_mod != "ALL": df = df[df['model_name'] == s_mod]
+    if s_res != "ALL": df = df[df['result'] == s_res]
+    df = df.sort_values('date_dt', ascending=False)
+    if cal in ["All Trades", "By Year"]:
+        for yr in sorted(df['date_dt'].dt.year.unique(), reverse=True):
+            yr_df = df[df['date_dt'].dt.year == yr]
+            with st.expander(f"📁 YEAR: {yr} ({len(yr_df)})", expanded=True):
+                for mo in yr_df['date_dt'].dt.strftime('%B').unique():
+                    mo_df = yr_df[yr_df['date_dt'].dt.strftime('%B') == mo]
+                    with st.expander(f"📅 {mo.upper()} ({len(mo_df)})"):
+                        render_trade_list(mo_df, supabase)
+    elif cal == "By Month":
+        for mo in df['date_dt'].dt.strftime('%B %Y').unique():
+            mo_df = df[df['date_dt'].dt.strftime('%B %Y') == mo]
+            with st.expander(f"📅 {mo.upper()} ({len(mo_df)})", expanded=True):
+                render_trade_list(mo_df, supabase)
+    else: render_trade_list(df, supabase)
 
-    # --- TOP ROW: BAR CHART & STATS ---
-    col_main, col_side = st.columns([2, 1])
-    
-    with col_main:
-        st.write(f"**{title_prefix} VOLUME BY TIME**")
-        counts = sub_df['entry_time'].value_counts().sort_index()
-        st.bar_chart(counts, color=color_hex)
-        
-    with col_side:
-        avg_dur = sub_df['duration_mins'].mean() if 'duration_mins' in sub_df.columns else 0
-        st.metric(f"AVG {title_prefix} TIME", f"{round(avg_dur, 1)}m")
-        # Added a small summary metric for the top model in this specific deep dive
-        if not sub_df['model_name'].empty:
-            st.write(f"**Top Model:** `{sub_df['model_name'].mode()[0]}`")
-
-    # --- BOTTOM ROW: THE 6-DONUT GRID ---
-    # We use 6 columns to ensure Model Variation and Entry Type fit perfectly
-    st.write("") 
-    d1, d2, d3, d4, d5, d6 = st.columns(6)
-    
-    donut_fields = [
-        (d1, 'model_var', 'Variations'),
-        (d2, 'market', 'Markets'),
-        (d3, 'session', 'Sessions'),
-        (d4, 'entry_tf', 'Timeframes'),
-        (d5, 'news_impact', 'News'),
-        (d6, 'entry_type', 'Entry Type')
-    ]
-    
-    for col, field, title in donut_fields:
-        with col:
-            st.write(f"**{title}**")
-            if field in sub_df.columns and not sub_df[field].dropna().empty:
-                # Optimized donut: hole=0.7, Bold colors, and Auto-Labels
-                fig = px.pie(sub_df, names=field, hole=0.7, color_discrete_sequence=px.colors.qualitative.Bold)
-                fig.update_layout(
-                    showlegend=False, 
-                    height=160, 
-                    margin=dict(t=10, b=10, l=5, r=5),
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)'
-                )
-                # This ensures you can see the labels and % without hovering
-                fig.update_traces(textposition='inside', textinfo='percent+label', textfont_size=9)
-                st.plotly_chart(fig, use_container_width=True, key=f"donut_{field}_{mode_label}_{title_prefix}")
+def render_trade_list(t_df, supabase):
+    for _, row in t_df.iterrows():
+        res = row.get('result', 'BE')
+        color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
+        header = f"{row.get('model_name')} | {row.get('market')} | {row['date_dt'].strftime('%d %b')} | {round(row.get('rr', 0), 2)}R"
+        with st.expander(header):
+            if st.session_state.get('editing_id') == row['id']:
+                with st.form(f"ed_{row['id']}"):
+                    st.write("### 🛠️ EDIT MASTER DATA")
+                    ec1, ec2, ec3 = st.columns(3)
+                    with ec1:
+                        e_date = st.date_input("DATE", value=row['date_dt'].date())
+                        e_mod = st.text_input("MODEL", value=str(row.get('model_name', '')))
+                        e_var = st.text_input("VAR", value=str(row.get('model_var', '')))
+                        e_mkt = st.text_input("MKT", value=str(row.get('market', '')))
+                    with ec2:
+                        e_target = st.text_input("TARGET", value=str(row.get('target', ''))).upper()
+                        e_type = st.text_input("ENTRY", value=str(row.get('entry_type', '')))
+                        e_sess = st.text_input("SESS", value=str(row.get('session', '')))
+                        e_time = st.text_input("TIME", value=str(row.get('entry_time', '')))
+                    with ec3:
+                        e_res = st.selectbox("RES", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(res))
+                        e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
+                        e_tp = st.number_input("TP", value=float(row.get('tp_handles', 0.0)))
+                        e_sl = st.number_input("SL", value=float(row.get('sl_handles', 1.0)))
+                    e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
+                    if st.form_submit_button("💾 SAVE"):
+                        rr = e_tp / e_sl if e_sl != 0 else 0
+                        up = {"date": str(e_date), "model_name": e_mod, "model_var": e_var, "market": e_mkt, "target": e_target, "entry_type": e_type, "session": e_sess, "entry_time": e_time, "result": e_res, "risk_pc": e_risk, "notes": e_notes, "tp_handles": e_tp, "sl_handles": e_sl, "rr": rr}
+                        supabase.table("trades").update(up).eq("id", row['id']).execute()
+                        st.session_state.editing_id = None; st.rerun()
+                if st.button("❌ CANCEL", key=f"cn_{row['id']}"):
+                    st.session_state.editing_id = None; st.rerun()
             else:
-                st.caption("No Data")
-
-def render_analytics(df, label):
-    with st.container():
-        st.markdown(f'<h1 style="color: white;">📊 {label} PERFORMANCE</h1>', unsafe_allow_html=True)
-        
-        if df.empty:
-            st.info("Vault empty. Secure trades in The Forge to generate analytics.")
-            return
-
-        m1, m2, m3, m4 = st.columns(4)
-        wins = len(df[df['result'] == 'WIN'])
-        total = len(df)
-        win_rate = (wins / total * 100) if total > 0 else 0
-        
-        m1.metric("WIN RATE", f"{round(win_rate, 1)}%")
-        m2.metric("AVG DUR", f"{round(df['duration_mins'].mean(), 1)}m")
-        m3.metric("AVG RISK", f"{round(df['risk_pc'].mean(), 1)}%")
-        m4.metric("TOTAL RR", f"{round(df['rr'].sum(), 1)}R")
-
-        st.divider()
-
-        # --- 2. MAIN KPI ROW ---
-        c_left, c_right = st.columns([2, 1])
-        with c_left:
-            st.write("**EQUITY FLOW BY ENTRY TIME**")
-            st.bar_chart(data=df, x='entry_time', y='rr', color='result')
-        with c_right:
-            st.write("**RESULT RATIO**")
-            fig_res = px.pie(
-                df, 
-                names='result', 
-                hole=0.6, 
-                color='result',
-                color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'}
-            )
-            fig_res.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=True)
-            st.plotly_chart(fig_res, use_container_width=True, key=f"main_ratio_{label}")
-
-        # --- 3. THE THREE DEEP DIVES ---
-        st.divider()
-        
-        with st.expander("🏆 WINNERS DEEP-DIVE"):
-            render_deep_dive_content(df[df['result'] == 'WIN'], "WIN", "#00FF00", label)
-            
-        with st.expander("💀 LOSSES DEEP-DIVE"):
-            render_deep_dive_content(df[df['result'] == 'LOSS'], "LOSS", "#FF0000", label)
-
-        with st.expander("🧠 HINDSIGHT DEEP-DIVE"):
-            if 'hindsight' in df.columns:
-                h_df = df[df['hindsight'] == True]
-                render_deep_dive_content(h_df, "STUDY", "#00A2FF", label)
-            else:
-                st.warning("Hindsight column missing in database.")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.write(f"DATE: `{row['date_dt'].strftime('%Y-%m-%d')}`"); st.write(f"TARGET: `{row.get('target', 'N/A')}`")
+                    st.write(f"ENTRY: `{row.get('entry_type')}`"); st.write(f"SESS: `{row.get('session')}`")
+                with c2:
+                    st.write(f"TF: `{row.get('entry_tf')}`"); st.write(f"VAR: `{row.get('model_var')}`")
+                    st.write(f"TIME: `{row.get('entry_time')}`")
+                with c3:
+                    st.write(f"RISK: `{row.get('risk_pc')}%` "); st.write(f"RESULT: :{color}[**{res}**]")
+                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"):
+                        supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
+                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"):
+                    st.session_state.editing_id = row['id']; st.rerun()
+                st.info(f"**NOTES:** {row.get('notes')}"); st.divider()

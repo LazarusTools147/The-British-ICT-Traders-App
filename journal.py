@@ -67,29 +67,27 @@ def render_trade_list(t_df, supabase):
         with st.expander(header):
             if st.session_state.get('editing_id') == row['id']:
                 with st.form(f"ed_{row['id']}"):
-                    st.write("### 🛠️ EDIT")
+                    st.write("### 🛠️ EDIT MASTER DATA")
                     ec1, ec2, ec3 = st.columns(3)
                     with ec1:
+                        e_date = st.date_input("DATE", value=row['date_dt'].date())
                         e_mod = st.text_input("MODEL", value=str(row.get('model_name', '')))
                         e_var = st.text_input("VAR", value=str(row.get('model_var', '')))
                         e_mkt = st.text_input("MKT", value=str(row.get('market', '')))
-                        e_tf = st.text_input("TF", value=str(row.get('entry_tf', '')))
                     with ec2:
+                        e_target = st.text_input("TARGET", value=str(row.get('target', ''))).upper()
                         e_type = st.text_input("ENTRY", value=str(row.get('entry_type', '')))
                         e_sess = st.text_input("SESS", value=str(row.get('session', '')))
                         e_time = st.text_input("TIME", value=str(row.get('entry_time', '')))
-                        n_l = ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"]
-                        e_news = st.selectbox("NEWS", n_l, index=n_l.index(row.get('news_impact', 'NONE')) if row.get('news_impact') in n_l else 0)
                     with ec3:
                         e_res = st.selectbox("RES", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(res))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
-                        e_dur = st.number_input("DUR", value=int(row.get('duration_mins', 15)))
                         e_tp = st.number_input("TP", value=float(row.get('tp_handles', 0.0)))
                         e_sl = st.number_input("SL", value=float(row.get('sl_handles', 1.0)))
                     e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
                     if st.form_submit_button("💾 SAVE"):
                         rr = e_tp / e_sl if e_sl != 0 else 0
-                        up = {"model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_tf": e_tf, "entry_type": e_type, "session": e_sess, "entry_time": e_time, "news_impact": e_news, "result": e_res, "risk_pc": e_risk, "duration_mins": e_dur, "notes": e_notes, "tp_handles": e_tp, "sl_handles": e_sl, "rr": rr}
+                        up = {"date": str(e_date), "model_name": e_mod, "model_var": e_var, "market": e_mkt, "target": e_target, "entry_type": e_type, "session": e_sess, "entry_time": e_time, "result": e_res, "risk_pc": e_risk, "notes": e_notes, "tp_handles": e_tp, "sl_handles": e_sl, "rr": rr}
                         supabase.table("trades").update(up).eq("id", row['id']).execute()
                         st.session_state.editing_id = None; st.rerun()
                 if st.button("❌ CANCEL", key=f"cn_{row['id']}"):
@@ -97,11 +95,11 @@ def render_trade_list(t_df, supabase):
             else:
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.write(f"TIME: `{row.get('entry_time')}`"); st.write(f"SESS: `{row.get('session')}`")
-                    st.write(f"ENTRY: `{row.get('entry_type')}`"); st.write(f"NEWS: `{row.get('news_impact')}`")
+                    st.write(f"DATE: `{row['date_dt'].strftime('%Y-%m-%d')}`"); st.write(f"TARGET: `{row.get('target', 'N/A')}`")
+                    st.write(f"ENTRY: `{row.get('entry_type')}`"); st.write(f"SESS: `{row.get('session')}`")
                 with c2:
                     st.write(f"TF: `{row.get('entry_tf')}`"); st.write(f"VAR: `{row.get('model_var')}`")
-                    st.write(f"DUR: `{row.get('duration_mins')}m`")
+                    st.write(f"TIME: `{row.get('entry_time')}`")
                 with c3:
                     st.write(f"RISK: `{row.get('risk_pc')}%` "); st.write(f"RESULT: :{color}[**{res}**]")
                     if st.button("🗑️ PURGE", key=f"p_{row['id']}"):
