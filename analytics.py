@@ -99,11 +99,15 @@ def render_analytics(df, label):
         # --- 3. THE THREE DEEP DIVES ---
         st.divider()
         
-        with st.expander("🏆 WINNERS DEEP-DIVE"):
-            render_deep_dive_content(df[df['result'] == 'WIN'], & (df['hindsight'] == False)], "WIN", "#00FF00", label)
-            
-        with st.expander("💀 LOSSES DEEP-DIVE"):
-            render_deep_dive_content(df[df['result'] == 'LOSS'], & (df['hindsight'] == False)], "LOSS", "#FF0000", label)
+        with st.expander("🏆 WINNERS"): 
+        # This checks if it's False, 0, or the string 'false'
+        win_execs = df[(df['result'] == 'WIN') & (df['hindsight'].astype(str).str.lower() == 'false')]
+        render_deep_dive_content(win_execs, "WIN", "#00FF00", label)
+        
+    with st.expander("💀 LOSSES"): 
+        # This does the same for losses
+        loss_execs = df[(df['result'] == 'LOSS') & (df['hindsight'].astype(str).str.lower() == 'false')]
+        render_deep_dive_content(loss_execs, "LOSS", "#FF0000", label)
 
         with st.expander("🧠 HINDSIGHT DEEP-DIVE"):
             if 'hindsight' in df.columns:
