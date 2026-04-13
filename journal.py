@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from database import get_supabase
 
 def render_journal_tab():
@@ -70,6 +70,7 @@ def render_trade_list(t_df, supabase):
                     st.write("### 🛠️ EDIT")
                     ec1, ec2, ec3 = st.columns(3)
                     with ec1:
+                        e_date = st.date_input("DATE", value=row['date_dt'].date())
                         e_mod = st.text_input("MODEL", value=str(row.get('model_name', '')))
                         e_var = st.text_input("VAR", value=str(row.get('model_var', '')))
                         e_mkt = st.text_input("MKT", value=str(row.get('market', '')))
@@ -89,7 +90,7 @@ def render_trade_list(t_df, supabase):
                     e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
                     if st.form_submit_button("💾 SAVE"):
                         rr = e_tp / e_sl if e_sl != 0 else 0
-                        up = {"model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_tf": e_tf, "entry_type": e_type, "session": e_sess, "entry_time": e_time, "news_impact": e_news, "result": e_res, "risk_pc": e_risk, "duration_mins": e_dur, "notes": e_notes, "tp_handles": e_tp, "sl_handles": e_sl, "rr": rr}
+                        up = {"date": str(date),"model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_tf": e_tf, "entry_type": e_type, "session": e_sess, "entry_time": e_time, "news_impact": e_news, "result": e_res, "risk_pc": e_risk, "duration_mins": e_dur, "notes": e_notes, "tp_handles": e_tp, "sl_handles": e_sl, "rr": rr}
                         supabase.table("trades").update(up).eq("id", row['id']).execute()
                         st.session_state.editing_id = None; st.rerun()
                 if st.button("❌ CANCEL", key=f"cn_{row['id']}"):
