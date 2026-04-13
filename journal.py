@@ -20,7 +20,6 @@ def render_journal_tab():
         return
 
     # --- 1. STATS OVERVIEW & SEPARATED COUNTERS ---
-    # Strictly separated counts as requested
     live_count = len(df[(df['type'] == 'LIVE') & (df['hindsight'] == False)])
     demo_count = len(df[(df['type'] == 'BACKTEST/DEMO') & (df['hindsight'] == False)])
     hind_count = len(df[df['hindsight'] == True])
@@ -44,7 +43,7 @@ def render_journal_tab():
 
     st.divider()
 
-    # --- 2. HORIZONTAL CALENDAR & FILTERS ---
+    # --- 2. HORIZONTAL SELECTOR ---
     cal_filter = st.radio(
         "TIMEFRAME", 
         ["All Trades", "By Year", "By Month", "By Week", "By Day"], 
@@ -59,74 +58,80 @@ def render_journal_tab():
     with f3:
         sel_res = st.selectbox("RESULT FILTER", ["ALL RESULTS", "WIN", "LOSS", "BE"])
 
-    # --- 3. FIXING THE CALENDAR FILTERING ---
-    # Convert string dates to actual date objects for reliable comparison
-    df['date_dt'] = pd.to_datetime(df['date']).dt.date
+    # --- 3. CORE FILTERING ENGINE ---
+    df['date_dt'] = pd.to_datetime(df['date'])
     today = datetime.now().date()
     
-    if cal_filter == "By Year":
-        df = df[pd.to_datetime(df['date_dt']).dt.year == today.year]
-    elif cal_filter == "By Month":
-        df = df[pd.to_datetime(df['date_dt']).dt.month == today.month]
-        df = df[pd.to_datetime(df['date_dt']).dt.year == today.year]
-    elif cal_filter == "By Week":
-        start_of_week = today - timedelta(days=7)
-        df = df[df['date_dt'] >= start_of_week]
+    # Filter only applied for Week and Day to keep Year/Month/All expansive
+    if cal_filter == "By Week":
+        df = df[df['date_dt'].dt.date >= (today - timedelta(days=7))]
     elif cal_filter == "By Day":
-        df = df[df['date_dt'] == today]
+        df = df[df['date_dt'].dt.date == today]
 
-    # Apply Master Filters
     if sel_model != "ALL MODELS": df = df[df['model_name'] == sel_model]
     if sel_var != "ALL VARIATIONS": df = df[df['model_var'] == sel_var]
     if sel_res != "ALL RESULTS": df = df[df['result'] == sel_res]
 
-    # --- 4. THE FOLDER GROUPING SYSTEM ---
-    if cal_filter in ["By Year", "All Trades"]:
-        df['group_label'] = pd.to_datetime(df['date_dt']).dt.strftime('%Y')
-    elif cal_filter == "By Month":
-        df['group_label'] = pd.to_datetime(df['date_dt']).dt.strftime('%B %Y')
-    elif cal_filter == "By Week":
-        df['group_label'] = "LAST 7 DAYS"
-    else:
-        df['group_label'] = "TODAY"
+    # --- 4. THE NESTED FOLDER SYSTEM ---
+    # Sorting newest trades first globally
+    df = df.sort_values('date_dt', ascending=False)
 
-    # Sorting newest to oldest
-    df = df.sort_values('date', ascending=False)
-    
-    unique_groups = df['group_label'].unique()
-    for group in unique_groups:
-        group_df = df[df['group_label'] == group]
+    if df.empty:
+        st.warning("No trades match these filters.")
+        return
+
+    # Logic for grouping based on the selector
+    if cal_filter in ["All Trades", "By Year"]:
+        years = df['date_dt'].dt.year.unique()
+        for yr in sorted(years, reverse=True):
+            yr_df = df[df['date_dt'].dt.year == yr]
+            with st.expander(f"📁 YEAR: {yr} ({len(yr_df)} TRADES)", expanded=True):
+                # Nested Month grouping inside Year
+                months = yr_df['date_dt'].dt.strftime('%B').unique()
+                for mo in months:
+                    mo_df = yr_df[yr_df['date_dt'].dt.strftime('%B') == mo]
+                    with st.expander(f"📅 {mo.upper()} ({len(mo_df)} TRADES)"):
+                        render_trade_list(mo_df, supabase)
+
+    elif cal_filter == "By Month":
+        months = df['date_dt'].dt.strftime('%B %Y').unique()
+        for mo in months:
+            mo_df = df[df['date_dt'].dt.strftime('%B %Y') == mo]
+            with st.expander(f"📅 {mo.upper()} ({len(mo_df)} TRADES)", expanded=True):
+                render_trade_list(mo_df, supabase)
+
+    else: # Week or Day
+        render_trade_list(df, supabase)
+
+def render_trade_list(target_df, supabase):
+    """Helper function to render the actual trade cards."""
+    for _, row in target_df.iterrows():
+        res = row['result']
+        color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
+        icon = "🟢" if res == "WIN" else "🔴" if res == "LOSS" else "🟡"
+        header = f"{icon} {row['model_name']} | {row['market']} | {row['date_dt'].strftime('%d %b %Y')} | {round(row['rr'], 2)}R"
         
-        with st.expander(f"📁 {group.upper()} ({len(group_df)} TRADES)", expanded=True):
-            for _, row in group_df.iterrows():
-                res = row['result']
-                color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
-                icon = "🟢" if res == "WIN" else "🔴" if res == "LOSS" else "🟡"
+        with st.expander(header):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
+                st.write(f"SESS: `{row.get('session', 'N/A')}`")
+                st.write(f"ENTRY: `{row.get('entry_type', 'N/A')}`")
+            with c2:
+                st.write(f"TF: `{row.get('entry_tf', 'N/A')}`")
+                st.write(f"VAR: `{row.get('model_var', 'N/A')}`")
+                st.write(f"DUR: `{row.get('duration_mins', 0)}m`")
+            with c3:
+                st.write(f"RISK: `{row.get('risk_pc', 0)}%`")
+                st.write(f"RESULT: :{color}[**{res}**]")
+                st.write(f"MODE: `{'HINDSIGHT' if row['hindsight'] else row['type']}`")
                 
-                header = f"{icon} {row['model_name']} | {row['market']} | {row['date']} | {round(row['rr'], 2)}R"
-                
-                st.markdown(f"### {header}")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
-                    st.write(f"SESS: `{row.get('session', 'N/A')}`")
-                    st.write(f"ENTRY: `{row.get('entry_type', 'N/A')}`")
-                with c2:
-                    st.write(f"TF: `{row.get('entry_tf', 'N/A')}`")
-                    st.write(f"VAR: `{row.get('model_var', 'N/A')}`")
-                    st.write(f"DUR: `{row.get('duration_mins', 0)}m`")
-                with c3:
-                    st.write(f"RISK: `{row.get('risk_pc', 0)}%`")
-                    st.write(f"RESULT: :{color}[**{res}**]")
-                    mode_text = "HINDSIGHT" if row.get('hindsight') else row.get('type')
-                    st.write(f"MODE: `{mode_text}`")
-                    
-                    if st.button("🗑️ PURGE", key=f"del_{row['id']}"):
-                        supabase.table("trades").delete().eq("id", row['id']).execute()
-                        st.rerun()
-                
-                if row.get('screenshot_text'):
-                    st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
-                
-                st.info(f"**CONFLUENCE NOTES:**\n\n{row.get('notes', 'No notes provided.')}")
-                st.divider()
+                if st.button("🗑️ PURGE", key=f"del_{row['id']}"):
+                    supabase.table("trades").delete().eq("id", row['id']).execute()
+                    st.rerun()
+            
+            if row.get('screenshot_text'):
+                st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
+            
+            st.info(f"**NOTES:** {row.get('notes', 'N/A')}")
+            st.divider()
