@@ -104,7 +104,7 @@ def render_analytics(df, label):
         win_execs = df[(df['result'] == 'WIN') & (df['hindsight'].astype(str).str.lower() == 'false')]
         render_deep_dive_content(win_execs, "WIN", "#00FF00", label)
         
-    with st.expander("💀 LOSSES"): 
+        with st.expander("💀 LOSSES"): 
         # This does the same for losses
         loss_execs = df[(df['result'] == 'LOSS') & (df['hindsight'].astype(str).str.lower() == 'false')]
         render_deep_dive_content(loss_execs, "LOSS", "#FF0000", label)
