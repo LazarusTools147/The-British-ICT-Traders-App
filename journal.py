@@ -19,7 +19,7 @@ def render_journal_tab():
         st.info("Your private vault is currently empty.")
         return
 
-    # --- 1. STATS OVERVIEW & COUNTERS ---
+    # --- 1. STATS OVERVIEW & SEPARATED COUNTERS ---
     live_count = len(df[(df['type'] == 'LIVE') & (df['hindsight'] == False)])
     demo_count = len(df[(df['type'] == 'BACKTEST/DEMO') & (df['hindsight'] == False)])
     hind_count = len(df[df['hindsight'] == True])
@@ -58,7 +58,7 @@ def render_journal_tab():
     with f3:
         sel_res = st.selectbox("RESULT FILTER", ["ALL RESULTS", "WIN", "LOSS", "BE"])
 
-    # --- 3. FILTERING ENGINE ---
+    # --- 3. CORE FILTERING ENGINE ---
     df['date_dt'] = pd.to_datetime(df['date'])
     today = datetime.now().date()
     
@@ -76,7 +76,7 @@ def render_journal_tab():
         st.warning("No trades match these filters.")
         return
 
-    # --- 4. NESTED FOLDER RENDER ---
+    # --- 4. THE NESTED FOLDER SYSTEM ---
     if cal_filter in ["All Trades", "By Year"]:
         years = df['date_dt'].dt.year.unique()
         for yr in sorted(years, reverse=True):
@@ -104,9 +104,10 @@ def render_trade_list(target_df, supabase):
         header = f"{icon} {row['model_name']} | {row['market']} | {row['date_dt'].strftime('%d %b %Y')} | {round(row['rr'], 2)}R"
         
         with st.expander(header):
-            # If editing this specific ID, show the Full Edit Form
-            if st.session_state.get('editing_id') == row['id']:
-                with st.form(f"full_edit_{row['id']}"):
+            is_editing = st.session_state.get('editing_id') == row['id']
+            
+            if is_editing:
+                with st.form(f"full_edit_form_{row['id']}"):
                     st.markdown("### 🛠️ EDIT TRADE DATA")
                     ec1, ec2, ec3 = st.columns(3)
                     with ec1:
@@ -122,9 +123,10 @@ def render_trade_list(target_df, supabase):
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_dur = st.number_input("DUR (MINS)", value=int(row.get('duration_mins', 15)))
                     
-                    e_notes = st.text_area("NOTES", value=row['notes'])
+                    e_notes = st.text_area("CONFLUENCE NOTES", value=row['notes'], height=150)
                     
-                    if st.form_submit_button("💾 UPDATE & SYNC CHARTS"):
+                    eb1, eb2 = st.columns(2)
+                    if eb1.form_submit_button("💾 UPDATE & SYNC CHARTS"):
                         update_data = {
                             "model_name": e_mod, "model_var": e_var, "market": e_mkt,
                             "entry_type": e_type, "entry_time": e_time, "session": e_sess,
@@ -134,11 +136,10 @@ def render_trade_list(target_df, supabase):
                         supabase.table("trades").update(update_data).eq("id", row['id']).execute()
                         st.session_state.editing_id = None
                         st.rerun()
-                    if st.button("CANCEL"):
+                    if eb2.form_submit_button("❌ CANCEL"):
                         st.session_state.editing_id = None
                         st.rerun()
             else:
-                # Normal Display Mode
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
@@ -151,7 +152,8 @@ def render_trade_list(target_df, supabase):
                 with c3:
                     st.write(f"RISK: `{row.get('risk_pc', 0)}%`")
                     st.write(f"RESULT: :{color}[**{res}**]")
-                    st.write(f"MODE: `{'HINDSIGHT' if row['hindsight'] else row['type']}`")
+                    mode_text = "HINDSIGHT" if row.get('hindsight') else row.get('type', 'LIVE')
+                    st.write(f"MODE: `{mode_text}`")
                     
                     if st.button("🗑️ PURGE", key=f"del_{row['id']}"):
                         supabase.table("trades").delete().eq("id", row['id']).execute()
@@ -160,9 +162,10 @@ def render_trade_list(target_df, supabase):
                 if row.get('screenshot_text'):
                     st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                 
-                st.info(f"**NOTES:** {row.get('notes', 'N/A')}")
-                
+                # UNIVERSAL EDIT BUTTON - Positioned for all trade types
                 if st.button("✏️ EDIT FULL DATA", key=f"edit_btn_{row['id']}"):
                     st.session_state.editing_id = row['id']
                     st.rerun()
-            st.divider()
+
+                st.info(f"**CONFLUENCE NOTES:**\n\n{row.get('notes', 'N/A')}")
+                st.divider()
