@@ -104,47 +104,49 @@ def render_trade_list(target_df, supabase):
         header = f"{icon} {row['model_name']} | {row['market']} | {row['date_dt'].strftime('%d %b %Y')} | {round(row['rr'], 2)}R"
         
         with st.expander(header):
-            is_editing = st.session_state.get('editing_id') == row['id']
-            
-            if is_editing:
-                with st.form(f"full_edit_form_{row['id']}"):
-                    st.markdown("### 🛠️ EDIT TRADE DATA")
+            if st.session_state.get('editing_id') == row['id']:
+                with st.form(f"master_edit_form_{row['id']}"):
+                    st.markdown("### 🛠️ EDIT MASTER TRADE DATA")
                     ec1, ec2, ec3 = st.columns(3)
                     with ec1:
-                        e_mod = st.text_input("MODEL", value=row['model_name']).upper()
+                        e_mod = st.text_input("MODEL NAME", value=row['model_name']).upper()
                         e_var = st.text_input("VARIATION", value=row.get('model_var', '')).upper()
                         e_mkt = st.text_input("MARKET", value=row['market']).upper()
+                        e_tf = st.text_input("TIMEFRAME", value=row.get('entry_tf', '')).upper()
                     with ec2:
                         e_type = st.text_input("ENTRY TYPE", value=row.get('entry_type', '')).upper()
-                        e_time = st.text_input("TIME", value=row.get('entry_time', ''))
                         e_sess = st.text_input("SESSION", value=row.get('session', '')).upper()
+                        e_time = st.text_input("ENTRY TIME", value=row.get('entry_time', ''))
+                        e_news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], 
+                                             index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row.get('news_impact', 'NONE')))
                     with ec3:
                         e_res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(res))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
-                        e_dur = st.number_input("DUR (MINS)", value=int(row.get('duration_mins', 15)))
+                        e_dur = st.number_input("DURATION (MINS)", value=int(row.get('duration_mins', 15)))
                     
                     e_notes = st.text_area("CONFLUENCE NOTES", value=row['notes'], height=150)
                     
-                    eb1, eb2 = st.columns(2)
-                    if eb1.form_submit_button("💾 UPDATE & SYNC CHARTS"):
+                    if st.form_submit_button("💾 UPDATE ALL RECORDS & SYNC"):
                         update_data = {
-                            "model_name": e_mod, "model_var": e_var, "market": e_mkt,
-                            "entry_type": e_type, "entry_time": e_time, "session": e_sess,
-                            "result": e_res, "risk_pc": e_risk, "duration_mins": e_dur,
-                            "notes": e_notes
+                            "model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_tf": e_tf,
+                            "entry_type": e_type, "session": e_sess, "entry_time": e_time,
+                            "news_impact": e_news, "result": e_res, "risk_pc": e_risk,
+                            "duration_mins": e_dur, "notes": e_notes
                         }
                         supabase.table("trades").update(update_data).eq("id", row['id']).execute()
                         st.session_state.editing_id = None
                         st.rerun()
-                    if eb2.form_submit_button("❌ CANCEL"):
-                        st.session_state.editing_id = None
-                        st.rerun()
+
+                if st.button("❌ CANCEL", key=f"cancel_{row['id']}"):
+                    st.session_state.editing_id = None
+                    st.rerun()
             else:
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
                     st.write(f"SESS: `{row.get('session', 'N/A')}`")
                     st.write(f"ENTRY: `{row.get('entry_type', 'N/A')}`")
+                    st.write(f"NEWS: `{row.get('news_impact', 'NONE')}`")
                 with c2:
                     st.write(f"TF: `{row.get('entry_tf', 'N/A')}`")
                     st.write(f"VAR: `{row.get('model_var', 'N/A')}`")
@@ -162,7 +164,6 @@ def render_trade_list(target_df, supabase):
                 if row.get('screenshot_text'):
                     st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                 
-                # UNIVERSAL EDIT BUTTON - Positioned for all trade types
                 if st.button("✏️ EDIT FULL DATA", key=f"edit_btn_{row['id']}"):
                     st.session_state.editing_id = row['id']
                     st.rerun()
