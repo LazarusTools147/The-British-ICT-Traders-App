@@ -95,7 +95,8 @@ def render_journal_tab():
                 render_trade_list(mo_df, supabase)
     else:
         render_trade_list(df, supabase)
-        def render_trade_list(target_df, supabase):
+
+def render_trade_list(target_df, supabase):
     for _, row in target_df.iterrows():
         res = row['result']
         color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
@@ -129,7 +130,7 @@ def render_journal_tab():
                     
                     e_notes = st.text_area("CONFLUENCE NOTES", value=row['notes'], height=150)
                     
-                    # MANDATORY SUBMIT BUTTON
+                    # MANDATORY SUBMIT BUTTON - MUST BE INSIDE st.form()
                     if st.form_submit_button("💾 UPDATE ALL RECORDS & SYNC"):
                         new_rr = e_tp / e_sl if e_sl != 0 else 0
                         update_data = {
@@ -143,9 +144,11 @@ def render_journal_tab():
                         st.session_state.editing_id = None
                         st.rerun()
 
+                # Cancel button is OUTSIDE the form block
                 if st.button("❌ CANCEL", key=f"cancel_{row['id']}"):
                     st.session_state.editing_id = None
                     st.rerun()
+                # --- END OF MASTER EDIT FORM ---
             else:
                 # --- DISPLAY MODE ---
                 c1, c2, c3 = st.columns(3)
