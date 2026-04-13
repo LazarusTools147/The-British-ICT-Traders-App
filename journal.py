@@ -105,6 +105,7 @@ def render_trade_list(target_df, supabase):
         
         with st.expander(header):
             if st.session_state.get('editing_id') == row['id']:
+                # THE MASTER FORM - FIXED SUBMIT BUTTON & ALL FIELDS
                 with st.form(f"master_edit_form_{row['id']}"):
                     st.markdown("### 🛠️ EDIT MASTER TRADE DATA")
                     ec1, ec2, ec3 = st.columns(3)
@@ -117,21 +118,26 @@ def render_trade_list(target_df, supabase):
                         e_type = st.text_input("ENTRY TYPE", value=row.get('entry_type', '')).upper()
                         e_sess = st.text_input("SESSION", value=row.get('session', '')).upper()
                         e_time = st.text_input("ENTRY TIME", value=row.get('entry_time', ''))
-                        e_news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], 
-                                             index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row.get('news_impact', 'NONE')))
+                        n_list = ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"]
+                        e_news = st.selectbox("NEWS IMPACT", n_list, index=n_list.index(row.get('news_impact', 'NONE')))
                     with ec3:
                         e_res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(res))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_dur = st.number_input("DURATION (MINS)", value=int(row.get('duration_mins', 15)))
+                        # Added TP/SL editing so RR auto-updates
+                        e_tp = st.number_input("TP HANDLES", value=float(row.get('tp_handles', 0.0)))
+                        e_sl = st.number_input("SL HANDLES", value=float(row.get('sl_handles', 1.0)))
                     
                     e_notes = st.text_area("CONFLUENCE NOTES", value=row['notes'], height=150)
                     
                     if st.form_submit_button("💾 UPDATE ALL RECORDS & SYNC"):
+                        new_rr = e_tp / e_sl if e_sl != 0 else 0
                         update_data = {
                             "model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_tf": e_tf,
                             "entry_type": e_type, "session": e_sess, "entry_time": e_time,
                             "news_impact": e_news, "result": e_res, "risk_pc": e_risk,
-                            "duration_mins": e_dur, "notes": e_notes
+                            "duration_mins": e_dur, "notes": e_notes, "tp_handles": e_tp,
+                            "sl_handles": e_sl, "rr": new_rr
                         }
                         supabase.table("trades").update(update_data).eq("id", row['id']).execute()
                         st.session_state.editing_id = None
@@ -141,6 +147,7 @@ def render_trade_list(target_df, supabase):
                     st.session_state.editing_id = None
                     st.rerun()
             else:
+                # DISPLAY MODE
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
