@@ -18,6 +18,22 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Institutional Styling Injection
+st.markdown("""
+    <style>
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #111;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+    }
+    .stTabs [aria-selected="true"] { background-color: #FF4B4B !important; color: white !important; }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- 3. THE NEW CLOUD AUTHENTICATION ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
@@ -43,7 +59,7 @@ if not st.session_state.auth:
                 st.error("ACCESS DENIED: INVALID CREDENTIALS.")
     st.stop()
 
-# --- 4. DATA SYNCHRONIZATION (FILTERED BY PRIVATE USERNAME) ---
+# --- 4. DATA SYNCHRONIZATION ---
 try:
     response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
     all_trades = pd.DataFrame(response.data)
@@ -69,24 +85,16 @@ with tabs[1]:
     render_forge()
 
 with tabs[2]:
-    st.subheader("📊 LIVE PERFORMANCE")
     if not all_trades.empty:
         live_trades = all_trades[all_trades['type'] == 'LIVE']
-        if not live_trades.empty:
-            render_analytics(live_trades, "LIVE")
-        else:
-            st.info(f"No LIVE trades found for {st.session_state.user}.")
+        render_analytics(live_trades, "LIVE")
     else:
         st.info("Cloud Vault is empty.")
 
 with tabs[3]:
-    st.subheader("🧪 BACKTEST PERFORMANCE")
     if not all_trades.empty:
         test_trades = all_trades[all_trades['type'] == 'BACKTEST/DEMO']
-        if not test_trades.empty:
-            render_analytics(test_trades, "TEST")
-        else:
-            st.info(f"No TEST trades found for {st.session_state.user}.")
+        render_analytics(test_trades, "TEST")
     else:
         st.info("Cloud Vault is empty.")
 
