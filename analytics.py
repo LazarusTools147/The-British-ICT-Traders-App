@@ -100,10 +100,10 @@ def render_analytics(df, label):
         st.divider()
         
         with st.expander("🏆 WINNERS DEEP-DIVE"):
-            render_deep_dive_content(df[df['result'] == 'WIN'], "WIN", "#00FF00", label)
+            render_deep_dive_content(df[df['result'] == 'WIN'], & (df['hindsight'] == False)], "WIN", "#00FF00", label)
             
         with st.expander("💀 LOSSES DEEP-DIVE"):
-            render_deep_dive_content(df[df['result'] == 'LOSS'], "LOSS", "#FF0000", label)
+            render_deep_dive_content(df[df['result'] == 'LOSS'], & (df['hindsight'] == False)], "LOSS", "#FF0000", label)
 
         with st.expander("🧠 HINDSIGHT DEEP-DIVE"):
             if 'hindsight' in df.columns:
