@@ -19,10 +19,10 @@ def render_journal_tab():
         st.info("Your private vault is currently empty.")
         return
 
-    # --- 1. STATS OVERVIEW & COUNTERS ---
-    # Fact-check: Real-time counts for your different execution modes
-    live_count = len(df[df['type'] == 'LIVE'])
-    demo_count = len(df[df['type'] == 'BACKTEST/DEMO'])
+    # --- 1. STATS OVERVIEW & SEPARATED COUNTERS ---
+    # Strictly separated counts as requested
+    live_count = len(df[(df['type'] == 'LIVE') & (df['hindsight'] == False)])
+    demo_count = len(df[(df['type'] == 'BACKTEST/DEMO') & (df['hindsight'] == False)])
     hind_count = len(df[df['hindsight'] == True])
 
     c1, c2, c3 = st.columns(3)
@@ -38,15 +38,13 @@ def render_journal_tab():
             fig_ent.update_layout(showlegend=False, height=180, margin=dict(t=0, b=0, l=0, r=0))
             st.plotly_chart(fig_ent, use_container_width=True, key="journal_entry_donut")
     with c3:
-        # Added the specific total counts you requested
-        st.metric("LIVE TRADES", live_count)
-        st.metric("DEMO TRADES", demo_count)
-        st.metric("HINDSIGHT", hind_count)
+        st.metric("LIVE EXECUTIONS", live_count)
+        st.metric("DEMO EXECUTIONS", demo_count)
+        st.metric("HINDSIGHT STUDIES", hind_count)
 
     st.divider()
 
     # --- 2. HORIZONTAL CALENDAR & FILTERS ---
-    # Changed "All Sales" to "All Trades" as requested
     cal_filter = st.radio(
         "TIMEFRAME", 
         ["All Trades", "By Year", "By Month", "By Week", "By Day"], 
@@ -61,82 +59,74 @@ def render_journal_tab():
     with f3:
         sel_res = st.selectbox("RESULT FILTER", ["ALL RESULTS", "WIN", "LOSS", "BE"])
 
-    # --- 3. FILTERING LOGIC ---
-    df['date_dt'] = pd.to_datetime(df['date'])
+    # --- 3. FIXING THE CALENDAR FILTERING ---
+    # Convert string dates to actual date objects for reliable comparison
+    df['date_dt'] = pd.to_datetime(df['date']).dt.date
     today = datetime.now().date()
     
-    if cal_filter == "By Year": 
-        df = df[df['date_dt'].dt.year == today.year]
-    elif cal_filter == "By Month": 
-        df = df[df['date_dt'].dt.month == today.month]
-        df = df[df['date_dt'].dt.year == today.year]
-    elif cal_filter == "By Week": 
-        df = df[df['date_dt'].dt.date >= (today - timedelta(days=7))]
-    elif cal_filter == "By Day": 
-        df = df[df['date_dt'].dt.date == today]
+    if cal_filter == "By Year":
+        df = df[pd.to_datetime(df['date_dt']).dt.year == today.year]
+    elif cal_filter == "By Month":
+        df = df[pd.to_datetime(df['date_dt']).dt.month == today.month]
+        df = df[pd.to_datetime(df['date_dt']).dt.year == today.year]
+    elif cal_filter == "By Week":
+        start_of_week = today - timedelta(days=7)
+        df = df[df['date_dt'] >= start_of_week]
+    elif cal_filter == "By Day":
+        df = df[df['date_dt'] == today]
 
+    # Apply Master Filters
     if sel_model != "ALL MODELS": df = df[df['model_name'] == sel_model]
     if sel_var != "ALL VARIATIONS": df = df[df['model_var'] == sel_var]
     if sel_res != "ALL RESULTS": df = df[df['result'] == sel_res]
 
-    # --- 4. GROUPING SYSTEM (THE FOLDERS) ---
-    # Create group labels based on the filter
+    # --- 4. THE FOLDER GROUPING SYSTEM ---
     if cal_filter in ["By Year", "All Trades"]:
-        df['group_label'] = df['date_dt'].dt.strftime('%Y')
+        df['group_label'] = pd.to_datetime(df['date_dt']).dt.strftime('%Y')
     elif cal_filter == "By Month":
-        df['group_label'] = df['date_dt'].dt.strftime('%B %Y')
+        df['group_label'] = pd.to_datetime(df['date_dt']).dt.strftime('%B %Y')
     elif cal_filter == "By Week":
         df['group_label'] = "LAST 7 DAYS"
     else:
-        df['group_label'] = "TODAY'S EXECUTION"
+        df['group_label'] = "TODAY"
 
-    # Sorting so newest groups and newest trades are on top
-    df = df.sort_values('date_dt', ascending=False)
+    # Sorting newest to oldest
+    df = df.sort_values('date', ascending=False)
     
-    for group in df['group_label'].unique():
+    unique_groups = df['group_label'].unique()
+    for group in unique_groups:
         group_df = df[df['group_label'] == group]
         
-        # This is the "Folder" header you asked for
         with st.expander(f"📁 {group.upper()} ({len(group_df)} TRADES)", expanded=True):
             for _, row in group_df.iterrows():
                 res = row['result']
                 color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
                 icon = "🟢" if res == "WIN" else "🔴" if res == "LOSS" else "🟡"
                 
-                # Trade Header inside the folder
-                t_header = f"{icon} {row['model_name']} | {row['market']} | {row['date_dt'].strftime('%d %b')} | {round(row['rr'], 2)}R"
+                header = f"{icon} {row['model_name']} | {row['market']} | {row['date']} | {round(row['rr'], 2)}R"
                 
-                with st.container():
-                    st.markdown(f"### {t_header}")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
-                        st.write(f"SESS: `{row.get('session', 'N/A')}`")
-                        st.write(f"ENTRY: `{row.get('entry_type', 'N/A')}`")
-                    with c2:
-                        st.write(f"TF: `{row.get('entry_tf', 'N/A')}`")
-                        st.write(f"TP: `{row.get('tp_handles', 0)}` handles")
-                        st.write(f"SL: `{row.get('sl_handles', 0)}` handles")
-                    with c3:
-                        st.write(f"RISK: `{row.get('risk_pc', 0)}%`")
-                        st.write(f"RESULT: :{color}[**{res}**]")
-                        if st.button("🗑️ PURGE", key=f"del_{row['id']}"):
-                            supabase.table("trades").delete().eq("id", row['id']).execute()
-                            st.rerun()
+                st.markdown(f"### {header}")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
+                    st.write(f"SESS: `{row.get('session', 'N/A')}`")
+                    st.write(f"ENTRY: `{row.get('entry_type', 'N/A')}`")
+                with c2:
+                    st.write(f"TF: `{row.get('entry_tf', 'N/A')}`")
+                    st.write(f"VAR: `{row.get('model_var', 'N/A')}`")
+                    st.write(f"DUR: `{row.get('duration_mins', 0)}m`")
+                with c3:
+                    st.write(f"RISK: `{row.get('risk_pc', 0)}%`")
+                    st.write(f"RESULT: :{color}[**{res}**]")
+                    mode_text = "HINDSIGHT" if row.get('hindsight') else row.get('type')
+                    st.write(f"MODE: `{mode_text}`")
                     
-                    if row.get('screenshot_text'):
-                        st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
-                    
-                    st.info(f"**NOTES:** {row.get('notes', '')}")
-                    
-                    if st.button("✏️ EDIT DETAILS", key=f"edit_{row['id']}"):
-                        st.session_state.editing_id = row['id']
-                    
-                    if st.session_state.get('editing_id') == row['id']:
-                        with st.form(f"f_{row['id']}"):
-                            n_notes = st.text_area("Update Notes", value=row['notes'])
-                            if st.form_submit_button("SAVE CHANGES"):
-                                supabase.table("trades").update({"notes": n_notes}).eq("id", row['id']).execute()
-                                st.session_state.editing_id = None
-                                st.rerun()
-                    st.divider()
+                    if st.button("🗑️ PURGE", key=f"del_{row['id']}"):
+                        supabase.table("trades").delete().eq("id", row['id']).execute()
+                        st.rerun()
+                
+                if row.get('screenshot_text'):
+                    st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
+                
+                st.info(f"**CONFLUENCE NOTES:**\n\n{row.get('notes', 'No notes provided.')}")
+                st.divider()
