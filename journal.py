@@ -20,7 +20,7 @@ def render_journal_tab():
         return
 
     # --- 1. STATS OVERVIEW & COUNTERS ---
-    # Fact-check: Adding specific counts for Live, Demo, and Hindsight as requested.
+    # Fact-check: Real-time counts for your different execution modes
     live_count = len(df[df['type'] == 'LIVE'])
     demo_count = len(df[df['type'] == 'BACKTEST/DEMO'])
     hind_count = len(df[df['hindsight'] == True])
@@ -38,6 +38,7 @@ def render_journal_tab():
             fig_ent.update_layout(showlegend=False, height=180, margin=dict(t=0, b=0, l=0, r=0))
             st.plotly_chart(fig_ent, use_container_width=True, key="journal_entry_donut")
     with c3:
+        # Added the specific total counts you requested
         st.metric("LIVE TRADES", live_count)
         st.metric("DEMO TRADES", demo_count)
         st.metric("HINDSIGHT", hind_count)
@@ -45,6 +46,7 @@ def render_journal_tab():
     st.divider()
 
     # --- 2. HORIZONTAL CALENDAR & FILTERS ---
+    # Changed "All Sales" to "All Trades" as requested
     cal_filter = st.radio(
         "TIMEFRAME", 
         ["All Trades", "By Year", "By Month", "By Week", "By Day"], 
@@ -53,47 +55,59 @@ def render_journal_tab():
     
     f1, f2, f3 = st.columns(3)
     with f1:
-        sel_model = st.selectbox("MODEL", ["ALL MODELS"] + sorted(df['model_name'].unique().tolist()))
+        sel_model = st.selectbox("MODEL FILTER", ["ALL MODELS"] + sorted(df['model_name'].unique().tolist()))
     with f2:
-        sel_var = st.selectbox("VARIATION", ["ALL VARIATIONS"] + sorted(df['model_var'].dropna().unique().tolist()))
+        sel_var = st.selectbox("VARIATION FILTER", ["ALL VARIATIONS"] + sorted(df['model_var'].dropna().unique().tolist()))
     with f3:
-        sel_res = st.selectbox("RESULT", ["ALL RESULTS", "WIN", "LOSS", "BE"])
+        sel_res = st.selectbox("RESULT FILTER", ["ALL RESULTS", "WIN", "LOSS", "BE"])
 
     # --- 3. FILTERING LOGIC ---
-    df['date'] = pd.to_datetime(df['date']).dt.date # Strip time for clean comparison
+    df['date_dt'] = pd.to_datetime(df['date'])
     today = datetime.now().date()
     
-    if cal_filter == "By Year": df = df[pd.to_datetime(df['date']).dt.year == today.year]
-    elif cal_filter == "By Month": df = df[pd.to_datetime(df['date']).dt.month == today.month]
-    elif cal_filter == "By Week": df = df[df['date'] >= (today - timedelta(days=7))]
-    elif cal_filter == "By Day": df = df[df['date'] == today]
+    if cal_filter == "By Year": 
+        df = df[df['date_dt'].dt.year == today.year]
+    elif cal_filter == "By Month": 
+        df = df[df['date_dt'].dt.month == today.month]
+        df = df[df['date_dt'].dt.year == today.year]
+    elif cal_filter == "By Week": 
+        df = df[df['date_dt'].dt.date >= (today - timedelta(days=7))]
+    elif cal_filter == "By Day": 
+        df = df[df['date_dt'].dt.date == today]
 
     if sel_model != "ALL MODELS": df = df[df['model_name'] == sel_model]
     if sel_var != "ALL VARIATIONS": df = df[df['model_var'] == sel_var]
     if sel_res != "ALL RESULTS": df = df[df['result'] == sel_res]
 
     # --- 4. GROUPING SYSTEM (THE FOLDERS) ---
-    # We group by the chosen timeframe to create the dropdown headers you asked for
-    if cal_filter == "By Year" or cal_filter == "All Trades":
-        df['group'] = pd.to_datetime(df['date']).dt.strftime('%Y')
+    # Create group labels based on the filter
+    if cal_filter in ["By Year", "All Trades"]:
+        df['group_label'] = df['date_dt'].dt.strftime('%Y')
     elif cal_filter == "By Month":
-        df['group'] = pd.to_datetime(df['date']).dt.strftime('%B %Y')
+        df['group_label'] = df['date_dt'].dt.strftime('%B %Y')
     elif cal_filter == "By Week":
-        df['group'] = "Last 7 Days"
+        df['group_label'] = "LAST 7 DAYS"
     else:
-        df['group'] = "Today's Executions"
+        df['group_label'] = "TODAY'S EXECUTION"
 
-    groups = df['group'].unique()
-    for group in groups:
-        group_df = df[df['group'] == group].sort_values('date', ascending=False)
+    # Sorting so newest groups and newest trades are on top
+    df = df.sort_values('date_dt', ascending=False)
+    
+    for group in df['group_label'].unique():
+        group_df = df[df['group_label'] == group]
+        
+        # This is the "Folder" header you asked for
         with st.expander(f"📁 {group.upper()} ({len(group_df)} TRADES)", expanded=True):
             for _, row in group_df.iterrows():
                 res = row['result']
                 color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
-                header = f"{row['model_name']} | {row['market']} | {row['date']} | {round(row['rr'], 2)}R"
+                icon = "🟢" if res == "WIN" else "🔴" if res == "LOSS" else "🟡"
+                
+                # Trade Header inside the folder
+                t_header = f"{icon} {row['model_name']} | {row['market']} | {row['date_dt'].strftime('%d %b')} | {round(row['rr'], 2)}R"
                 
                 with st.container():
-                    st.markdown(f"**{header}**")
+                    st.markdown(f"### {t_header}")
                     c1, c2, c3 = st.columns(3)
                     with c1:
                         st.write(f"TIME: `{row.get('entry_time', 'N/A')}`")
@@ -113,13 +127,15 @@ def render_journal_tab():
                     if row.get('screenshot_text'):
                         st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                     
-                    if st.button("✏️ EDIT", key=f"edit_{row['id']}"):
+                    st.info(f"**NOTES:** {row.get('notes', '')}")
+                    
+                    if st.button("✏️ EDIT DETAILS", key=f"edit_{row['id']}"):
                         st.session_state.editing_id = row['id']
                     
                     if st.session_state.get('editing_id') == row['id']:
                         with st.form(f"f_{row['id']}"):
-                            n_notes = st.text_area("Notes", value=row['notes'])
-                            if st.form_submit_button("SAVE"):
+                            n_notes = st.text_area("Update Notes", value=row['notes'])
+                            if st.form_submit_button("SAVE CHANGES"):
                                 supabase.table("trades").update({"notes": n_notes}).eq("id", row['id']).execute()
                                 st.session_state.editing_id = None
                                 st.rerun()
