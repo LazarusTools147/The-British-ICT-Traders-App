@@ -75,6 +75,8 @@ def render_forge():
             is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
             news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
         with c2:
+            # NEW: Entry Type text input
+            etype = st.text_input("ENTRY TYPE (e.g. SILVER BULLET, MSS)").upper()
             tm, tf = st.text_input("ENTRY TIME (EST)"), st.text_input("TF (e.g. 1m, 5m)").upper()
             sess = st.text_input("SESSION (e.g. LONDON)").upper()
             dur = st.number_input("DURATION (MINS)", 1, 1440, 15)
@@ -97,7 +99,8 @@ def render_forge():
                 "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
                 "notes": nts, "date": str(dt), "duration_mins": dur, 
                 "screenshot_text": image_to_base64(img), 
-                "hindsight": is_hindsight, "news_impact": news
+                "hindsight": is_hindsight, "news_impact": news,
+                "entry_type": etype # Added to schema
             }
             try:
                 supabase.table("trades").insert(trade_data).execute()
