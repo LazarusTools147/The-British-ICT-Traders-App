@@ -10,60 +10,19 @@ def image_to_base64(uploaded_file):
         return base64.b64encode(uploaded_file.read()).decode('utf-8')
     return None
 
-def render_architect():
-    st.markdown('<h2 style="color: #FF4B4B;">🏗️ MODEL ARCHITECT</h2>', unsafe_allow_html=True)
-    supabase = get_supabase()
-    
-    try:
-        response = supabase.table("models").select("*").eq("trader_username", st.session_state.user).execute()
-        existing_models = pd.DataFrame(response.data)
-    except Exception as e:
-        existing_models = pd.DataFrame()
-
-    mode = st.radio("MODE", ["CREATE NEW", "EDIT EXISTING"], horizontal=True)
-    m_name, m_logic, m_sess, current_img = "", "", [], None
-
-    if mode == "EDIT EXISTING" and not existing_models.empty:
-        target = st.selectbox("SELECT MODEL", existing_models['name'].tolist())
-        row = existing_models[existing_models['name'] == target].iloc[0]
-        m_name, m_logic = row['name'], row['logic']
-        m_sess = row['sessions'].split(",") if row['sessions'] else []
-        current_img = row.get('screenshot_text')
-
-    with st.form("model_form"):
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            name_in = st.text_input("MODEL NAME", value=m_name).upper()
-            sess_in = st.multiselect("VALID SESSIONS", ["ASIA", "LONDON", "NY AM", "NY PM"], default=m_sess)
-        with c2:
-            img_in = st.file_uploader("UPLOAD SCHEMATIC", type=['png', 'jpg', 'jpeg'])
-            
-        logic_in = st.text_area("CORE LOGIC & FVG REQUIREMENTS", value=m_logic, height=200)
-        
-        if st.form_submit_button("SECURE TO PRIVATE CLOUD"):
-            if name_in and logic_in:
-                final_img = image_to_base64(img_in) if img_in else current_img
-                data = {
-                    "trader_username": st.session_state.user,
-                    "name": name_in, "logic": logic_in, "sessions": ",".join(sess_in),
-                    "screenshot_text": final_img
-                }
-                supabase.table("models").upsert(data).execute()
-                st.success(f"✔️ {name_in} SECURED")
-                st.rerun()
-
-    if current_img:
-        st.image(f"data:image/png;base64,{current_img}", use_container_width=True)
-
 def render_forge():
     st.markdown('<h2 style="color: #FF4B4B;">🔥 THE FORGE</h2>', unsafe_allow_html=True)
     supabase = get_supabase()
     
-    m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
-    models = [r['name'] for r in m_resp.data]
+    # Sync available models for the dropdown
+    try:
+        m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
+        models = [r['name'] for r in m_resp.data]
+    except:
+        models = []
     
     if not models:
-        st.warning("Build a model in Architect first."); return
+        st.warning("No models found. Build a model in the Architect tab first."); return
 
     with st.form("forge_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -74,37 +33,64 @@ def render_forge():
             mkt = st.text_input("MARKET (e.g. NQ, ES)").upper()
             is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
             news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
+        
         with c2:
-            # NEW: Entry Type text input
             etype = st.text_input("ENTRY TYPE (e.g. SILVER BULLET, MSS)").upper()
-            tm, tf = st.text_input("ENTRY TIME (EST)"), st.text_input("TF (e.g. 1m, 5m)").upper()
-            sess = st.text_input("SESSION (e.g. LONDON)").upper()
+            tm = st.text_input("ENTRY TIME (EST)")
+            tf = st.text_input("TF (e.g. 1m, 5m)").upper()
+            sess = st.selectbox("SESSION", ["ASIA", "LONDON", "NY AM", "NY PM"])
             dur = st.number_input("DURATION (MINS)", 1, 1440, 15)
+            target_val = st.text_input("TARGET (DOL/LEVEL)").upper()
+
         with c3:
-            sl = st.number_input("SL (HANDLES)", 0.1, 1000.0, 5.0)
-            tp = st.number_input("TP (HANDLES)", 0.1, 5000.0, 15.0)
             res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
+            # PRICE LEVEL INPUTS
+            e_price = st.number_input("ENTRY PRICE", value=0.0, format="%.2f")
+            sl_price = st.number_input("STOP LOSS PRICE", value=0.0, format="%.2f")
+            tp_price = st.number_input("TAKE PROFIT PRICE", value=0.0, format="%.2f")
             rsk = st.number_input("RISK %", 0.1, 100.0, 1.0)
             dt = st.date_input("DATE", datetime.now())
             
-        nts = st.text_area("CONFLUENCE NOTES (Sloppy Market Checklist?)")
+        st.divider()
+        st.write("### 📏 RELEVANT SESSION RANGES")
+        # Dynamic Selection Logic
+        selected_sessions = st.multiselect("SELECT SESSIONS TO LOG VOLATILITY", ["CBDR", "ASIA", "LONDON", "NY AM", "NY PM"])
+        
+        # Dictionary to store session range values
+        ranges = {"CBDR": None, "ASIA": None, "LONDON": None, "NY AM": None, "NY PM": None}
+        
+        if selected_sessions:
+            r_cols = st.columns(len(selected_sessions))
+            for i, sess_name in enumerate(selected_sessions):
+                ranges[sess_name] = r_cols[i].number_input(f"{sess_name} Handles", value=0.0)
+
+        st.divider()
+        nts = st.text_area("CONFLUENCE NOTES / PSYCHOLOGY")
         img = st.file_uploader("ENTRY SCREENSHOT", type=['png', 'jpg', 'jpeg'])
         
         if st.form_submit_button("FIRE INTO PRIVATE VAULT"):
-            rr = tp / sl if sl > 0 else 0
+            # AUTOMATIC MATH Logic
+            sl_h = abs(e_price - sl_price)
+            tp_h = abs(e_price - tp_price)
+            calc_rr = tp_h / sl_h if sl_h > 0 else 0
+            
             trade_data = {
                 "trader_username": st.session_state.user,
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
-                "risk_pc": rsk, "rr": rr, "sl_handles": sl, "tp_handles": tp,
+                "risk_pc": rsk, "rr": calc_rr, "sl_handles": sl_h, "tp_handles": tp_h,
+                "entry_price": e_price, "sl_price": sl_price, "tp_price": tp_price,
                 "notes": nts, "date": str(dt), "duration_mins": dur, 
                 "screenshot_text": image_to_base64(img), 
                 "hindsight": is_hindsight, "news_impact": news,
-                "entry_type": etype # Added to schema
+                "entry_type": etype, "target": target_val,
+                "cbdr_size": ranges["CBDR"], "asia_size": ranges["ASIA"],
+                "london_size": ranges["LONDON"], "ny_am_size": ranges["NY AM"],
+                "ny_pm_size": ranges["NY PM"]
             }
             try:
                 supabase.table("trades").insert(trade_data).execute()
-                st.success("🎯 TRADE SECURED")
+                st.success(f"🎯 TRADE SECURED | RR: {round(calc_rr, 2)}R")
                 st.rerun()
             except Exception as e:
                 st.error(f"DATABASE ERROR: {e}")

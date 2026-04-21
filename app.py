@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 from database import init_db, get_supabase
-from components import render_architect, render_forge, render_compounder
+from components import render_forge, render_compounder
+from architect import render_architect_tab
 from analytics import render_analytics
 from journal import render_journal_tab
 from dca import render_dca_tab
@@ -12,7 +13,7 @@ supabase = get_supabase()
 
 # --- 2. GLOBAL PAGE CONFIG ---
 st.set_page_config(
-    page_title="ICT_MASTER_TERMINAL_V8.0",
+    page_title="ICT_MASTER_TERMINAL_V9.0",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -34,14 +35,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. THE NEW CLOUD AUTHENTICATION ---
+# --- 3. THE CLOUD AUTHENTICATION ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
     st.session_state.user = None
 
 if not st.session_state.auth:
     st.title("🔐 TERMINAL_ACCESS_REQUIRED")
-    st.write("Institutional Trading Vault v8.0 | Multi-User Cloud Infrastructure")
+    st.write("Institutional Trading Vault v9.0 | Multi-User Cloud Infrastructure")
     
     with st.form("login_form"):
         u_input = st.text_input("USERNAME").upper().strip()
@@ -69,7 +70,7 @@ except Exception as e:
 
 # --- 5. NAVIGATION (THE TABS) ---
 tabs = st.tabs([
-    "🏗️ ARCHITECT", 
+    "📐 ARCHITECT", 
     "🔥 THE_FORGE", 
     "📊 LIVE_DATA", 
     "🧪 TEST_DATA", 
@@ -79,22 +80,24 @@ tabs = st.tabs([
 ])
 
 with tabs[0]: 
-    render_architect()
+    render_architect_tab()
 
 with tabs[1]: 
     render_forge()
 
 with tabs[2]:
     if not all_trades.empty:
-        live_trades = all_trades[all_trades['type'] == 'LIVE']
+        # Filter for Live trades that are NOT study/hindsight
+        live_trades = all_trades[(all_trades['type'] == 'LIVE') & (all_trades['hindsight'] == False)]
         render_analytics(live_trades, "LIVE")
     else:
         st.info("Cloud Vault is empty.")
 
 with tabs[3]:
     if not all_trades.empty:
-        test_trades = all_trades[all_trades['type'] == 'BACKTEST/DEMO']
-        render_analytics(test_trades, "TEST")
+        # Include Hindsight and Demo in the Test/Study view
+        test_trades = all_trades[(all_trades['type'] == 'BACKTEST/DEMO') | (all_trades['hindsight'] == True)]
+        render_analytics(test_trades, "STUDY/TEST")
     else:
         st.info("Cloud Vault is empty.")
 
@@ -117,5 +120,5 @@ if st.sidebar.button("🔒 SECURE_LOGOUT"):
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.info("v8.0 Multi-User Cloud Build | 2026 Institutional Edition")
+st.sidebar.info("v9.0 Multi-User Cloud Build | 2026 Institutional Edition")
 st.sidebar.write("System Status: **🟢 ONLINE**")
