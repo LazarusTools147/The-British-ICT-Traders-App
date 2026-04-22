@@ -8,7 +8,6 @@ def render_range_bar(sub_df, col_name, title, color):
         plot_df = sub_df[sub_df[col_name] > 0].copy()
         
         # Pull the bucket size from session state (set in app.py sidebar)
-        # Fallback to 10.0 if something goes wrong
         b_size = st.session_state.get('bucket_size', 10.0)
         
         fig = px.histogram(
@@ -108,24 +107,36 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
 def render_analytics(df, label):
     st.markdown(f'<h1 style="color: white;">📊 {label} PERFORMANCE</h1>', unsafe_allow_html=True)
     if df.empty:
-        st.info("Vault empty. Secure trades in The Forge to generate analytics.")
-        return
+        st.info("Vault empty."); return
 
-    m1, m2, m3, m4 = st.columns(4)
+    # --- MATH ENGINE: CALCULATE REAL RR AND % RETURNS ---
+    # Force RR to be negative for losses
+    df['adj_rr'] = df.apply(lambda x: -abs(x['rr']) if x['result'] == 'LOSS' else abs(x['rr']) if x['result'] == 'WIN' else 0, axis=1)
+    # Calculate % Return (Risk % * RR)
+    df['net_return'] = df.apply(lambda x: -(x['risk_pc']) if x['result'] == 'LOSS' else (x['rr'] * x['risk_pc']) if x['result'] == 'WIN' else 0, axis=1)
+    
+    total_rr = df['adj_rr'].sum()
+    total_net = df['net_return'].sum()
+
+    m1, m2, m3, m4, m5 = st.columns(5)
     wins = len(df[df['result'] == 'WIN'])
     total = len(df)
     win_rate = (wins / total * 100) if total > 0 else 0
+    
     m1.metric("WIN RATE", f"{round(win_rate, 1)}%")
     m2.metric("AVG DUR", f"{round(df['duration_mins'].mean(), 1)}m")
     m3.metric("AVG RISK", f"{round(df['risk_pc'].mean(), 1)}%")
-    m4.metric("TOTAL RR", f"{round(df['rr'].sum(), 1)}R")
+    m4.metric("TOTAL RR", f"{round(total_rr, 1)}R", delta=f"{round(total_rr, 1)}R")
+    m5.metric("NET GROWTH", f"{round(total_net, 2)}%", delta=f"{round(total_net, 2)}%")
 
     st.divider()
+    
     c_left, c_right = st.columns([2, 1])
     with c_left:
-        st.write("**RR DISTRIBUTION (1R BUCKETS)**")
-        fig_rr = px.histogram(df, x='rr', color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
-        fig_rr.update_traces(xbins=dict(start=0, end=50, size=1))
+        st.write("**RR PERFORMANCE DISTRIBUTION**")
+        # Now uses adj_rr to show losses on the negative axis
+        fig_rr = px.histogram(df, x='adj_rr', color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
+        fig_rr.update_traces(xbins=dict(size=1))
         fig_rr.update_layout(height=300, margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_rr, use_container_width=True, key=f"rr_dist_{label}")
         
@@ -136,12 +147,16 @@ def render_analytics(df, label):
         st.plotly_chart(fig_res, use_container_width=True, key=f"main_ratio_{label}")
 
     st.divider()
+    
+    # --- DEEP DIVES ---
     with st.expander("🏆 WINNERS"): 
-        win_execs = df[(df['result'] == 'WIN') & (df['hindsight'].astype(str).str.lower() == 'false')]
+        win_execs = df[df['result'] == 'WIN']
         render_deep_dive_content(win_execs, "WIN", "#00FF00", label)
+        
     with st.expander("💀 LOSSES"): 
-        loss_execs = df[(df['result'] == 'LOSS') & (df['hindsight'].astype(str).str.lower() == 'false')]
+        loss_execs = df[df['result'] == 'LOSS']
         render_deep_dive_content(loss_execs, "LOSS", "#FF0000", label)
+        
     with st.expander("🧠 HINDSIGHT DEEP-DIVE"):
         if 'hindsight' in df.columns:
             h_df = df[df['hindsight'] == True]
