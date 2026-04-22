@@ -84,6 +84,7 @@ def render_trade_list(t_df, supabase):
                     with ec1:
                         e_date = st.date_input("DATE", value=row['date_dt'].date())
                         e_mod = st.text_input("MODEL", value=str(row.get('model_name', '')))
+                        e_var = st.text_input("VAR", value=str(row.get('model_var', '')))
                         e_mkt = st.text_input("MKT", value=str(row.get('market', '')))
                         e_price = st.number_input("ENTRY PRICE", value=float(row.get('entry_price', 0.0)), format="%.2f")
                     with ec2:
@@ -96,6 +97,7 @@ def render_trade_list(t_df, supabase):
                         e_res = st.selectbox("RES", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(res))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_tar = st.text_input("TARGET", value=str(row.get('target', '')))
+                        e_news = st.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row.get('news_impact', 'NONE')))
                     
                     st.write("**VOLATILITY RANGES (HANDLES)**")
                     v1, v2, v3, v4, v5 = st.columns(5)
@@ -110,9 +112,9 @@ def render_trade_list(t_df, supabase):
                     if st.form_submit_button("💾 SAVE CHANGES"):
                         sl_h = abs(e_price - e_sl_p); tp_h = abs(e_price - e_tp_p); rr = tp_h / sl_h if sl_h != 0 else 0
                         up = {
-                            "date": str(e_date), "model_name": e_mod, "market": e_mkt, "entry_price": e_price, "entry_time": e_time,
+                            "date": str(e_date), "model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_price": e_price, "entry_time": e_time,
                             "entry_type": e_type, "session": e_sess, "sl_price": e_sl_p, "tp_price": e_tp_p, 
-                            "result": e_res, "risk_pc": e_risk, "target": e_tar, "notes": e_notes, 
+                            "result": e_res, "risk_pc": e_risk, "target": e_tar, "notes": e_notes, "news_impact": e_news,
                             "sl_handles": sl_h, "tp_handles": tp_h, "rr": rr, 
                             "cbdr_size": e_cbdr, "asia_size": e_asia, "london_size": e_lon, "ny_am_size": e_am, "ny_pm_size": e_pm
                         }
@@ -122,16 +124,23 @@ def render_trade_list(t_df, supabase):
             else:
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.write(f"ENTRY: `{row.get('entry_price')}`")
-                    st.write(f"TIME: `{row.get('entry_time')}`")
-                    st.write(f"SESS: `{row.get('session')}`")
+                    st.write(f"**ENV:** `{row.get('type')}`")
+                    st.write(f"**VAR:** `{row.get('model_var')}`")
+                    st.write(f"**TIME:** `{row.get('entry_time')}`")
+                    st.write(f"**SESS:** `{row.get('session')}`")
                 with c2:
-                    st.write(f"SL: `{row.get('sl_price')}`"); st.write(f"TP: `{row.get('tp_price')}`")
-                    st.write(f"TYPE: `{row.get('entry_type')}`"); st.write(f"TARGET: `{row.get('target')}`")
+                    st.write(f"**ENTRY:** `{row.get('entry_price')}`")
+                    st.write(f"**SL:** `{row.get('sl_price')}`")
+                    st.write(f"**TP:** `{row.get('tp_price')}`")
+                    st.write(f"**DUR:** `{row.get('duration_mins')} mins`")
                 with c3:
-                    st.write(f"RISK: `{row.get('risk_pc')}%` "); st.write(f"RESULT: :{color}[**{res}**]")
-                    st.write(f"HANDLES: `{round(row.get('tp_handles', 0), 1)}`")
-                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                    st.write(f"**RISK:** `{row.get('risk_pc')}%` ")
+                    st.write(f"**RESULT:** :{color}[**{res}**]")
+                    st.write(f"**NEWS:** `{row.get('news_impact')}`")
+                    st.write(f"**HANDLES:** `{round(row.get('tp_handles', 0), 1)}`")
+                
+                st.divider()
+                st.write(f"**TYPE:** `{row.get('entry_type')}` | **TARGET:** `{row.get('target')}`")
                 
                 st.write("**SESSION RANGES:**")
                 v_cols = st.columns(5)
@@ -141,5 +150,11 @@ def render_trade_list(t_df, supabase):
                     if val and val > 0: v_cols[i].caption(f"**{label}:** {val}")
 
                 if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
-                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
+                
+                b1, b2 = st.columns([1, 4])
+                with b1:
+                    if st.button("✏️ EDIT", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
+                with b2:
+                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                
                 st.info(f"**NOTES:** {row.get('notes')}"); st.divider()
