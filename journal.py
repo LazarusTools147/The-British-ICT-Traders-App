@@ -68,9 +68,15 @@ def render_journal_tab():
         render_trade_list(df, supabase)
 
 def render_trade_list(t_df, supabase):
+    # Fetch registered markets once for the Edit dropdown
+    try:
+        mkt_resp = supabase.table("markets").select("market_name").eq("trader_username", st.session_state.user).execute()
+        markets = [r['market_name'] for r in mkt_resp.data]
+    except:
+        markets = []
+
     for _, row in t_df.iterrows():
         res = row.get('result', 'BE')
-        # Safety check for the new direction/side data
         side = row.get('direction', 'BUY')
         if side not in ["BUY", "SELL"]: side = "BUY"
         
@@ -87,7 +93,9 @@ def render_trade_list(t_df, supabase):
                         e_date = st.date_input("DATE", value=row['date_dt'].date())
                         e_mod = st.text_input("MODEL", value=str(row.get('model_name', '')))
                         e_var = st.text_input("VAR", value=str(row.get('model_var', '')))
-                        e_mkt = st.text_input("MKT", value=str(row.get('market', '')))
+                        # MARKET DROPDOWN IN EDITOR
+                        mkt_idx = markets.index(row['market']) if row['market'] in markets else 0
+                        e_mkt = st.selectbox("MKT", markets, index=mkt_idx)
                         e_price = st.number_input("ENTRY PRICE", value=float(row.get('entry_price', 0.0)), format="%.2f")
                     with ec2:
                         e_type = st.text_input("ENTRY", value=str(row.get('entry_type', '')))
@@ -112,7 +120,6 @@ def render_trade_list(t_df, supabase):
                     
                     e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
                     
-                    # MANDATORY FORM SUBMIT BUTTON
                     if st.form_submit_button("💾 SAVE CHANGES"):
                         sl_h = abs(e_price - e_sl_p); tp_h = abs(e_price - e_tp_p); rr = tp_h / sl_h if sl_h != 0 else 0
                         up = {
@@ -154,10 +161,8 @@ def render_trade_list(t_df, supabase):
 
                 if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                 
-                b1, b2 = st.columns([1, 4])
-                with b1:
-                    if st.button("✏️ EDIT", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
-                with b2:
-                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                # PURGE REMOVED - ONLY EDIT BUTTON REMAINS
+                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): 
+                    st.session_state.editing_id = row['id']; st.rerun()
                 
                 st.info(f"**NOTES:** {row.get('notes')}"); st.divider()
