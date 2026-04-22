@@ -14,7 +14,6 @@ def render_forge():
     st.markdown('<h2 style="color: #FF4B4B;">🔥 THE FORGE</h2>', unsafe_allow_html=True)
     supabase = get_supabase()
     
-    # Sync available models for the dropdown
     try:
         m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
         models = [r['name'] for r in m_resp.data]
@@ -44,7 +43,6 @@ def render_forge():
 
         with c3:
             res = st.selectbox("RESULT", ["WIN", "LOSS", "BE"])
-            # PRICE LEVEL INPUTS
             e_price = st.number_input("ENTRY PRICE", value=0.0, format="%.2f")
             sl_price = st.number_input("STOP LOSS PRICE", value=0.0, format="%.2f")
             tp_price = st.number_input("TAKE PROFIT PRICE", value=0.0, format="%.2f")
@@ -53,26 +51,26 @@ def render_forge():
             
         st.divider()
         st.write("### 📏 RELEVANT SESSION RANGES (HANDLES)")
-        # Dynamic Selection Logic
+        
+        # FIXED: Explicitly handle the list selection
         sess_options = ["CBDR", "ASIA", "LONDON", "NY AM", "NY PM"]
         selected_sessions = st.multiselect("SELECT SESSIONS TO LOG VOLATILITY", sess_options)
         
-        # Dictionary to store session range values
+        # Initialize dictionary with zeros
         ranges = {s: 0.0 for s in sess_options}
         
+        # Logic to display input boxes for selected sessions
         if selected_sessions:
-            # Create a row of boxes for every session selected
-            r_cols = st.columns(len(selected_sessions))
+            # We use a flexible column layout to ensure boxes aren't too squashed
+            cols = st.columns(len(selected_sessions))
             for i, sess_name in enumerate(selected_sessions):
-                # Unique keys are mandatory here to prevent Streamlit from skipping the render
-                ranges[sess_name] = r_cols[i].number_input(f"{sess_name}", value=0.0, step=0.25, key=f"f_rng_{sess_name}")
+                ranges[sess_name] = cols[i].number_input(f"{sess_name}", value=0.0, step=0.25, key=f"forge_{sess_name}")
 
         st.divider()
         nts = st.text_area("CONFLUENCE NOTES / PSYCHOLOGY")
         img = st.file_uploader("ENTRY SCREENSHOT", type=['png', 'jpg', 'jpeg'])
         
         if st.form_submit_button("FIRE INTO PRIVATE VAULT"):
-            # AUTOMATIC MATH Logic
             sl_h = abs(e_price - sl_price)
             tp_h = abs(e_price - tp_price)
             calc_rr = tp_h / sl_h if sl_h > 0 else 0
@@ -87,8 +85,10 @@ def render_forge():
                 "screenshot_text": image_to_base64(img), 
                 "hindsight": is_hindsight, "news_impact": news,
                 "entry_type": etype, "target": target_val,
-                "cbdr_size": ranges["CBDR"], "asia_size": ranges["ASIA"],
-                "london_size": ranges["LONDON"], "ny_am_size": ranges["NY AM"],
+                "cbdr_size": ranges["CBDR"], 
+                "asia_size": ranges["ASIA"],
+                "london_size": ranges["LONDON"], 
+                "ny_am_size": ranges["NY AM"],
                 "ny_pm_size": ranges["NY PM"]
             }
             try:
