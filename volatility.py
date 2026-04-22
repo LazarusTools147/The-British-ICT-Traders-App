@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from database import get_supabase
 
 def render_volatility_tab():
@@ -32,10 +32,8 @@ def render_volatility_tab():
             v_mkt = st.selectbox("MARKET", markets) if sidebar_mkt == "ALL MARKETS" else sidebar_mkt
             if sidebar_mkt != "ALL MARKETS": st.info(f"Target Market: **{sidebar_mkt}**")
             v_sess = st.selectbox("SESSION", list(session_defaults.keys()))
-            
-            # STRICT LIST: No Red Folder.
             v_news = st.selectbox("NEWS DRIVER", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"])
-            
+        
         with c2:
             v_high = st.number_input("SESSION HIGH PRICE", value=0.0, format="%.2f")
             v_low = st.number_input("SESSION LOW PRICE", value=0.0, format="%.2f")
@@ -44,16 +42,31 @@ def render_volatility_tab():
         st.divider()
         st.write("**TIME OF PEAK/TROUGH (NY TIME)**")
         t1, t2 = st.columns(2)
+        # We keep the inputs, but the logic below is what matters
         time_low = t1.time_input("TIME OF LOW", value=session_defaults[v_sess])
         time_high = t2.time_input("TIME OF HIGH", value=session_defaults[v_sess])
 
         if st.form_submit_button("📥 ARCHIVE SESSION TAPE"):
             handles = float(abs(v_high - v_low))
-            dt_low = datetime.combine(v_date, time_low)
-            dt_high = datetime.combine(v_date, time_high)
-            diff = abs((dt_high - dt_low).total_seconds() / 60)
-            duration_int = int(diff) if diff > 0 else 1
-            if duration_int > 720: duration_int = 1440 - duration_int
+            
+            # IMPROVED TIME LOGIC
+            # Use a dummy date to calculate the delta
+            dt1 = datetime.combine(v_date, time_low)
+            dt2 = datetime.combine(v_date, time_high)
+            
+            # If the times are identical (defaulting), we can't have 0. 
+            # But if they are different, we calculate the absolute difference.
+            delta = abs((dt2 - dt1).total_seconds() / 60)
+            
+            # Handle Midnight Crossover (e.g., Low at 23:00, High at 02:00)
+            # If the gap is huge (like 20 hours), it's probably a crossover move
+            if delta > 720: 
+                delta = 1440 - delta
+            
+            # Final Safety: If it's still 0 because you didn't change the clock, 
+            # we don't want to ruin the velocity math.
+            duration_int = int(delta) if delta > 0 else 1
+            
             velocity = round(handles / duration_int, 2)
             
             vol_data = {
@@ -65,7 +78,7 @@ def render_volatility_tab():
             }
             try:
                 supabase.table("session_tape").insert(vol_data).execute()
-                st.success(f"Archived {v_mkt}: {handles} Handles"); st.rerun()
+                st.success(f"Archived {v_mkt}: {handles} Handles in {duration_int}m"); st.rerun()
             except Exception as e: st.error(f"Database Error: {e}")
 
     # --- 2. ANALYTICS ---
@@ -81,7 +94,6 @@ def render_volatility_tab():
         df['DayName'] = df['date_dt'].dt.day_name()
         df['Year'] = df['date_dt'].dt.year
         df['Month'] = df['date_dt'].dt.strftime('%B')
-        df['DayNum'] = df['date_dt'].dt.day
         df['vel'] = df['notes'].apply(lambda x: float(x.split("VEL: ")[1].split("H/m")[0]) if "VEL:" in str(x) else 0.0)
 
         st.divider()
@@ -129,8 +141,6 @@ def render_volatility_tab():
                                                 e_date = ec1.date_input("DATE", value=row['date_dt'].date())
                                                 e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
                                                 e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
-                                                
-                                                # STRICT LIST SYNC
                                                 news_options = ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"]
                                                 e_news = ec1.selectbox("NEWS", news_options, index=news_options.index(row['news_impact']) if row['news_impact'] in news_options else 0)
                                                 
@@ -138,20 +148,28 @@ def render_volatility_tab():
                                                 e_low = ec2.number_input("LOW", value=float(row['low_price']), format="%.2f")
                                                 e_dir = ec2.selectbox("DIRECTION", ["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"], index=["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"].index(row['direction']))
                                                 
-                                                t_low_obj = datetime.strptime(row['time_low'], "%H:%M:%S").time() if row['time_low'] else time(8,0)
-                                                t_high_obj = datetime.strptime(row['time_high'], "%H:%M:%S").time() if row['time_high'] else time(10,0)
+                                                # Time parsing with safety
+                                                try: t_low_obj = datetime.strptime(row['time_low'], "%H:%M:%S").time()
+                                                except: t_low_obj = time(8,0)
+                                                try: t_high_obj = datetime.strptime(row['time_high'], "%H:%M:%S").time()
+                                                except: t_high_obj = time(10,0)
+                                                
                                                 e_tlow = ec2.time_input("TIME LOW", value=t_low_obj)
                                                 e_thigh = ec2.time_input("TIME HIGH", value=t_high_obj)
 
                                                 if st.form_submit_button("💾 UPDATE TAPE"):
                                                     h = float(abs(e_high - e_low))
-                                                    d = int(abs((datetime.combine(e_date, e_thigh) - datetime.combine(e_date, e_tlow)).total_seconds() / 60))
-                                                    if d == 0: d = 1
-                                                    v = round(h/d, 2)
+                                                    dt_e1 = datetime.combine(e_date, e_tlow)
+                                                    dt_e2 = datetime.combine(e_date, e_thigh)
+                                                    d_delta = abs((dt_e2 - dt_e1).total_seconds() / 60)
+                                                    if d_delta > 720: d_delta = 1440 - d_delta
+                                                    d_final = int(d_delta) if d_delta > 0 else 1
+                                                    
+                                                    v = round(h/d_final, 2)
                                                     up = {
                                                         "date": str(e_date), "market": e_mkt, "session": e_sess, 
                                                         "news_impact": e_news, "high_price": e_high, "low_price": e_low,
-                                                        "direction": e_dir, "handles": h, "duration_mins": d,
+                                                        "direction": e_dir, "handles": h, "duration_mins": d_final,
                                                         "time_low": str(e_tlow), "time_high": str(e_thigh), "notes": f"VEL: {v}H/m"
                                                     }
                                                     supabase.table("session_tape").update(up).eq("id", row['id']).execute()
