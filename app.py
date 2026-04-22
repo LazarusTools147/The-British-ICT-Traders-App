@@ -143,3 +143,5 @@ with tabs[5]:
 
 with tabs[6]: 
     render_compounder()
+with tabs[7]:
+    render_volatility_tab()
