@@ -29,15 +29,13 @@ def render_volatility_tab():
         "NY PM (12pm-4pm)": time(12, 0)
     }
 
-    # --- 1. DATA ENTRY FORM ---
+    # --- 1. DATA ENTRY FORM (STICKY) ---
     st.write("### 📝 LOG SESSION TAPE")
-    with st.form("vol_standalone_form", clear_on_submit=False): # Changed to False to prevent wipe
+    with st.form("vol_standalone_form", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
             v_date = st.date_input("DATE", value=st.session_state.last_v_date)
-            
             if sidebar_mkt == "ALL MARKETS":
-                # Find index of last used market
                 m_idx = markets.index(st.session_state.last_v_mkt) if st.session_state.last_v_mkt in markets else 0
                 v_mkt = st.selectbox("MARKET", markets, index=m_idx)
             else:
@@ -59,12 +57,10 @@ def render_volatility_tab():
         st.divider()
         st.write("**TIME OF PEAK/TROUGH (NY TIME)**")
         t1, t2 = st.columns(2)
-        # We manually use the form inputs here
         time_low = t1.time_input("TIME OF LOW", value=session_defaults[v_sess])
         time_high = t2.time_input("TIME OF HIGH", value=session_defaults[v_sess])
 
         if st.form_submit_button("📥 ARCHIVE SESSION TAPE"):
-            # Update Sticky Settings for next time
             st.session_state.last_v_date = v_date
             st.session_state.last_v_mkt = v_mkt
             st.session_state.last_v_sess = v_sess
@@ -73,11 +69,8 @@ def render_volatility_tab():
             handles = float(abs(v_high - v_low))
             dt1 = datetime.combine(v_date, time_low)
             dt2 = datetime.combine(v_date, time_high)
-            
             delta = abs((dt2 - dt1).total_seconds() / 60)
             if delta > 720: delta = 1440 - delta
-            
-            # THE FIX: We force the math to respect the inputs provided
             duration_int = int(delta) if delta > 0 else 1
             velocity = round(handles / duration_int, 2)
             
@@ -90,8 +83,7 @@ def render_volatility_tab():
             }
             try:
                 supabase.table("session_tape").insert(vol_data).execute()
-                st.success(f"Archived {v_mkt}: {handles} Handles in {duration_int}m")
-                st.rerun()
+                st.success(f"Archived {v_mkt}: {handles} Handles"); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
     # --- 2. ANALYTICS ---
@@ -126,7 +118,7 @@ def render_volatility_tab():
         fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
 
-        # --- 3. CALENDAR LIST & EDITOR ---
+        # --- 3. CALENDAR LIST & FULL EDITOR ---
         st.divider()
         st.write("### 📜 TAPE HISTORY")
         for yr in sorted(df['Year'].unique(), reverse=True):
@@ -147,21 +139,45 @@ def render_volatility_tab():
                                     with st.expander(f"{row['session']} | {row['market']} | {row['handles']}H"):
                                         if st.session_state.get('editing_tape_id') == row['id']:
                                             with st.form(f"edit_tape_{row['id']}"):
-                                                e_high = st.number_input("HIGH", value=float(row['high_price']))
-                                                e_low = st.number_input("LOW", value=float(row['low_price']))
-                                                if st.form_submit_button("💾 UPDATE"):
-                                                    # Recalculate duration during edit as well
-                                                    t1_e = datetime.strptime(row['time_low'], "%H:%M:%S")
-                                                    t2_e = datetime.strptime(row['time_high'], "%H:%M:%S")
-                                                    d_e = int(abs((t2_e - t1_e).total_seconds() / 60))
-                                                    if d_e == 0: d_e = 1
-                                                    h_e = float(abs(e_high - e_low))
-                                                    v_e = round(h_e/d_e, 2)
-                                                    supabase.table("session_tape").update({"high_price": e_high, "low_price": e_low, "handles": h_e, "duration_mins": d_e, "notes": f"VEL: {v_e}H/m"}).eq("id", row['id']).execute()
+                                                ec1, ec2 = st.columns(2)
+                                                e_date = ec1.date_input("DATE", value=row['date_dt'].date())
+                                                e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
+                                                e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
+                                                e_news = ec1.selectbox("NEWS", n_list, index=n_list.index(row['news_impact']) if row['news_impact'] in n_list else 0)
+                                                
+                                                e_high = ec2.number_input("HIGH", value=float(row['high_price']), format="%.2f")
+                                                e_low = ec2.number_input("LOW", value=float(row['low_price']), format="%.2f")
+                                                e_dir = ec2.selectbox("DIRECTION", ["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"], index=["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"].index(row['direction']))
+                                                
+                                                try: t_low_obj = datetime.strptime(row['time_low'], "%H:%M:%S").time()
+                                                except: t_low_obj = time(8,0)
+                                                try: t_high_obj = datetime.strptime(row['time_high'], "%H:%M:%S").time()
+                                                except: t_high_obj = time(10,0)
+                                                
+                                                e_tlow = ec2.time_input("TIME LOW", value=t_low_obj)
+                                                e_thigh = ec2.time_input("TIME HIGH", value=t_high_obj)
+
+                                                if st.form_submit_button("💾 UPDATE TAPE"):
+                                                    h = float(abs(e_high - e_low))
+                                                    dt_e1 = datetime.combine(e_date, e_tlow)
+                                                    dt_e2 = datetime.combine(e_date, e_thigh)
+                                                    d_delta = abs((dt_e2 - dt_e1).total_seconds() / 60)
+                                                    if d_delta > 720: d_delta = 1440 - d_delta
+                                                    d_final = int(d_delta) if d_delta > 0 else 1
+                                                    v = round(h/d_final, 2)
+                                                    up = {
+                                                        "date": str(e_date), "market": e_mkt, "session": e_sess, "news_impact": e_news,
+                                                        "high_price": e_high, "low_price": e_low, "direction": e_dir,
+                                                        "handles": h, "duration_mins": d_final, "time_low": str(e_tlow),
+                                                        "time_high": str(e_thigh), "notes": f"VEL: {v}H/m"
+                                                    }
+                                                    supabase.table("session_tape").update(up).eq("id", row['id']).execute()
                                                     st.session_state.editing_tape_id = None; st.rerun()
+                                            if st.button("❌ CANCEL", key=f"can_{row['id']}"):
+                                                st.session_state.editing_tape_id = None; st.rerun()
                                         else:
-                                            st.write(f"**BIAS:** :{h_color}[{row['direction']}]")
-                                            st.write(f"**DURATION:** {row['duration_mins']} mins | **VEL:** {row['notes']}")
+                                            st.write(f"**BIAS:** :{h_color}[{row['direction']}] | **NEWS:** `{row['news_impact']}`")
+                                            st.write(f"**DELIVERY:** {row['duration_mins']} mins | **VELOCITY:** {row['notes']}")
                                             if st.button("✏️ EDIT", key=f"ed_{row['id']}"):
                                                 st.session_state.editing_tape_id = row['id']; st.rerun()
     else:
