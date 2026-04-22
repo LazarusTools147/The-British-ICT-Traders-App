@@ -110,7 +110,7 @@ st.sidebar.info("v9.0 Multi-Market System | 2026 Edition")
 # --- 6. NAVIGATION (THE TABS) ---
 tabs = st.tabs([
     "📐 ARCHITECT", "🔥 THE_FORGE", "📊 LIVE_DATA", "🧪 TEST_DATA", 
-    "📓 JOURNAL", "📉 PORTFOLIO/DCA", "📈 COMPOUNDER"
+    "📓 JOURNAL", "📉 PORTFOLIO/DCA", "📈 COMPOUNDER", "📊 VOLATILITY"
 ])
 
 with tabs[0]: 
