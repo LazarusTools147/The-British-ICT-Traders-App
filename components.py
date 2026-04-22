@@ -54,17 +54,18 @@ def render_forge():
         st.divider()
         st.write("### 📏 RELEVANT SESSION RANGES (HANDLES)")
         # Dynamic Selection Logic
-        selected_sessions = st.multiselect("SELECT SESSIONS TO LOG VOLATILITY", ["CBDR", "ASIA", "LONDON", "NY AM", "NY PM"])
+        sess_options = ["CBDR", "ASIA", "LONDON", "NY AM", "NY PM"]
+        selected_sessions = st.multiselect("SELECT SESSIONS TO LOG VOLATILITY", sess_options)
         
-        # Dictionary to store session range values - maps dropdown label to DB column
-        ranges = {"CBDR": None, "ASIA": None, "LONDON": None, "NY AM": None, "NY PM": None}
+        # Dictionary to store session range values
+        ranges = {s: 0.0 for s in sess_options}
         
         if selected_sessions:
-            # Create dynamic columns based on how many sessions are selected
+            # Create a row of boxes for every session selected
             r_cols = st.columns(len(selected_sessions))
             for i, sess_name in enumerate(selected_sessions):
-                # 0.25 step for handle precision
-                ranges[sess_name] = r_cols[i].number_input(f"{sess_name} Handles", value=0.0, step=0.25)
+                # Unique keys are mandatory here to prevent Streamlit from skipping the render
+                ranges[sess_name] = r_cols[i].number_input(f"{sess_name}", value=0.0, step=0.25, key=f"f_rng_{sess_name}")
 
         st.divider()
         nts = st.text_area("CONFLUENCE NOTES / PSYCHOLOGY")
@@ -86,10 +87,8 @@ def render_forge():
                 "screenshot_text": image_to_base64(img), 
                 "hindsight": is_hindsight, "news_impact": news,
                 "entry_type": etype, "target": target_val,
-                "cbdr_size": ranges["CBDR"], 
-                "asia_size": ranges["ASIA"],
-                "london_size": ranges["LONDON"], 
-                "ny_am_size": ranges["NY AM"],
+                "cbdr_size": ranges["CBDR"], "asia_size": ranges["ASIA"],
+                "london_size": ranges["LONDON"], "ny_am_size": ranges["NY AM"],
                 "ny_pm_size": ranges["NY PM"]
             }
             try:
