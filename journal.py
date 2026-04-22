@@ -35,7 +35,6 @@ def render_journal_tab():
         st.metric("LIVE", live_c); st.metric("DEMO", demo_c); st.metric("STUDY", hind_c)
     
     st.divider()
-    
     cal = st.radio("TF", ["All Trades", "By Year", "By Month", "By Week", "By Day"], horizontal=True, label_visibility="collapsed")
     
     f1, f2, f3 = st.columns(3)
@@ -45,10 +44,8 @@ def render_journal_tab():
     
     df['date_dt'] = pd.to_datetime(df['date'])
     tday = datetime.now().date()
-    
     if cal == "By Week": df = df[df['date_dt'].dt.date >= (tday - timedelta(days=7))]
     elif cal == "By Day": df = df[df['date_dt'].dt.date == tday]
-    
     if s_mod != "ALL": df = df[df['model_name'] == s_mod]
     if s_res != "ALL": df = df[df['result'] == s_res]
     
@@ -73,7 +70,10 @@ def render_journal_tab():
 def render_trade_list(t_df, supabase):
     for _, row in t_df.iterrows():
         res = row.get('result', 'BE')
-        color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
+        side = row.get('direction', 'BUY')
+        side_color = "#00FF00" if side == "BUY" else "#FF0000"
+        res_color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
+        
         header = f"{row.get('model_name')} | {row.get('market')} | {row['date_dt'].strftime('%d %b')} | {round(row.get('rr', 0), 2)}R"
         
         with st.expander(header):
@@ -95,6 +95,7 @@ def render_trade_list(t_df, supabase):
                         e_tp_p = st.number_input("TP PRICE", value=float(row.get('tp_price', 0.0)), format="%.2f")
                     with ec3:
                         e_res = st.selectbox("RES", ["WIN", "LOSS", "BE"], index=["WIN", "LOSS", "BE"].index(res))
+                        e_side = st.selectbox("SIDE", ["BUY", "SELL"], index=["BUY", "SELL"].index(side))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_tar = st.text_input("TARGET", value=str(row.get('target', '')))
                         e_news = st.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row.get('news_impact', 'NONE')))
@@ -113,7 +114,7 @@ def render_trade_list(t_df, supabase):
                         sl_h = abs(e_price - e_sl_p); tp_h = abs(e_price - e_tp_p); rr = tp_h / sl_h if sl_h != 0 else 0
                         up = {
                             "date": str(e_date), "model_name": e_mod, "model_var": e_var, "market": e_mkt, "entry_price": e_price, "entry_time": e_time,
-                            "entry_type": e_type, "session": e_sess, "sl_price": e_sl_p, "tp_price": e_tp_p, 
+                            "entry_type": e_type, "session": e_sess, "sl_price": e_sl_p, "tp_price": e_tp_p, "direction": e_side,
                             "result": e_res, "risk_pc": e_risk, "target": e_tar, "notes": e_notes, "news_impact": e_news,
                             "sl_handles": sl_h, "tp_handles": tp_h, "rr": rr, 
                             "cbdr_size": e_cbdr, "asia_size": e_asia, "london_size": e_lon, "ny_am_size": e_am, "ny_pm_size": e_pm
@@ -122,26 +123,25 @@ def render_trade_list(t_df, supabase):
                         st.session_state.editing_id = None; st.rerun()
                 if st.button("❌ CANCEL", key=f"cn_{row['id']}"): st.session_state.editing_id = None; st.rerun()
             else:
-                # DATA DISPLAY - ALL FORGE FIELDS INCLUDED
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.write(f"**ENV:** `{row.get('type')}`")
                     st.write(f"**VAR:** `{row.get('model_var')}`")
                     st.write(f"**TIME:** `{row.get('entry_time')}`")
                     st.write(f"**SESS:** `{row.get('session')}`")
-                    st.write(f"**NEWS:** `{row.get('news_impact')}`")
+                    st.write(f"**SIDE:** :{side_color}[**{side}**]") # DIRECTION ADDED
                 with c2:
                     st.write(f"**ENTRY:** `{row.get('entry_price')}`")
                     st.write(f"**SL:** `{row.get('sl_price')}`")
                     st.write(f"**TP:** `{row.get('tp_price')}`")
-                    st.write(f"**TF:** `{row.get('entry_tf')}`")
                     st.write(f"**DUR:** `{row.get('duration_mins')} mins`")
+                    st.write(f"**TF:** `{row.get('entry_tf')}`")
                 with c3:
                     st.write(f"**RISK:** `{row.get('risk_pc')}%` ")
-                    st.write(f"**RESULT:** :{color}[**{res}**]")
+                    st.write(f"**RESULT:** :{res_color}[**{res}**]")
+                    st.write(f"**NEWS:** `{row.get('news_impact')}`")
                     st.write(f"**HANDLES:** `{round(row.get('tp_handles', 0), 1)}`")
                     st.write(f"**RR:** `{round(row.get('rr', 0), 2)}R`")
-                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                 
                 st.divider()
                 st.write(f"**TYPE:** `{row.get('entry_type')}` | **TARGET:** `{row.get('target')}`")
@@ -154,7 +154,6 @@ def render_trade_list(t_df, supabase):
                     if val and val > 0: v_cols[i].caption(f"**{label}:** {val}")
 
                 if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
-                
                 if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
-                
+                if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                 st.info(f"**NOTES:** {row.get('notes')}"); st.divider()

@@ -14,14 +14,18 @@ def render_forge():
     st.markdown('<h2 style="color: #FF4B4B;">🔥 THE FORGE</h2>', unsafe_allow_html=True)
     supabase = get_supabase()
     
+    # 1. SYNC MODELS & MARKETS FOR DROPDOWNS
     try:
         m_resp = supabase.table("models").select("name").eq("trader_username", st.session_state.user).execute()
         models = [r['name'] for r in m_resp.data]
+        
+        mkt_resp = supabase.table("markets").select("market_name").eq("trader_username", st.session_state.user).execute()
+        markets = [r['market_name'] for r in mkt_resp.data]
     except:
-        models = []
+        models = []; markets = []
     
-    if not models:
-        st.warning("No models found. Build a model in the Architect tab first."); return
+    if not models or not markets:
+        st.warning("Setup Required: Architect your Models and Markets first."); return
 
     with st.form("forge_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -29,7 +33,8 @@ def render_forge():
             env = st.radio("ENVIRONMENT", ["LIVE", "BACKTEST/DEMO"], horizontal=True)
             mod = st.selectbox("MODEL", models)
             mvar = st.text_input("VARIATION (e.g. ODA, MACRO)").upper()
-            mkt = st.text_input("MARKET (e.g. NQ, ES)").upper()
+            mkt = st.selectbox("MARKET", markets) 
+            side = st.selectbox("DIRECTION", ["BUY", "SELL"]) # New Buy/Sell Field
             is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
             news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
         
@@ -51,49 +56,41 @@ def render_forge():
             
         st.divider()
         st.write("### 📏 RELEVANT SESSION RANGES (HANDLES)")
-        
-        # FIXED: Explicitly handle the list selection
         sess_options = ["CBDR", "ASIA", "LONDON", "NY AM", "NY PM"]
         selected_sessions = st.multiselect("SELECT SESSIONS TO LOG VOLATILITY", sess_options)
         
-        # Initialize dictionary with zeros
         ranges = {s: 0.0 for s in sess_options}
-        
-        # Logic to display input boxes for selected sessions
         if selected_sessions:
-            # We use a flexible column layout to ensure boxes aren't too squashed
-            cols = st.columns(len(selected_sessions))
+            r_cols = st.columns(len(selected_sessions))
             for i, sess_name in enumerate(selected_sessions):
-                ranges[sess_name] = cols[i].number_input(f"{sess_name}", value=0.0, step=0.25, key=f"forge_{sess_name}")
+                ranges[sess_name] = r_cols[i].number_input(f"{sess_name}", value=0.0, step=0.25, key=f"forge_range_{sess_name}")
 
         st.divider()
         nts = st.text_area("CONFLUENCE NOTES / PSYCHOLOGY")
         img = st.file_uploader("ENTRY SCREENSHOT", type=['png', 'jpg', 'jpeg'])
         
         if st.form_submit_button("FIRE INTO PRIVATE VAULT"):
-            sl_h = abs(e_price - sl_price)
-            tp_h = abs(e_price - tp_price)
+            sl_h = abs(e_price - sl_price); tp_h = abs(e_price - tp_price)
             calc_rr = tp_h / sl_h if sl_h > 0 else 0
             
             trade_data = {
                 "trader_username": st.session_state.user,
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
+                "direction": side, # Saved to DB
                 "risk_pc": rsk, "rr": calc_rr, "sl_handles": sl_h, "tp_handles": tp_h,
                 "entry_price": e_price, "sl_price": sl_price, "tp_price": tp_price,
                 "notes": nts, "date": str(dt), "duration_mins": dur, 
                 "screenshot_text": image_to_base64(img), 
                 "hindsight": is_hindsight, "news_impact": news,
                 "entry_type": etype, "target": target_val,
-                "cbdr_size": ranges["CBDR"], 
-                "asia_size": ranges["ASIA"],
-                "london_size": ranges["LONDON"], 
-                "ny_am_size": ranges["NY AM"],
+                "cbdr_size": ranges["CBDR"], "asia_size": ranges["ASIA"],
+                "london_size": ranges["LONDON"], "ny_am_size": ranges["NY AM"],
                 "ny_pm_size": ranges["NY PM"]
             }
             try:
                 supabase.table("trades").insert(trade_data).execute()
-                st.success(f"🎯 TRADE SECURED | RR: {round(calc_rr, 2)}R")
+                st.success(f"🎯 {side} SECURED | RR: {round(calc_rr, 2)}R")
                 st.rerun()
             except Exception as e:
                 st.error(f"DATABASE ERROR: {e}")
@@ -115,8 +112,7 @@ def render_compounder():
     
     for m in range(1, int(yrs * 12) + 1):
         bal = (bal * (1 + (ret / 100))) + cur_dep
-        if m % freq_map[freq] == 0:
-            bal -= (wit * (4 if freq == "WEEKLY" else 1))
+        if m % freq_map[freq] == 0: bal -= (wit * (4 if freq == "WEEKLY" else 1))
         if m % 12 == 0:
             cur_dep *= (1 + (inc / 100))
             data.append({"Year": m // 12, "Balance": round(max(0, bal), 2), "Monthly Deposit": round(cur_dep, 2)})
