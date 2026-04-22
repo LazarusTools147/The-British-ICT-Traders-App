@@ -33,8 +33,8 @@ def render_volatility_tab():
             if sidebar_mkt != "ALL MARKETS": st.info(f"Target Market: **{sidebar_mkt}**")
             v_sess = st.selectbox("SESSION", list(session_defaults.keys()))
             
-            # UPDATED: NFP and CPI are now separate options
-            v_news = st.selectbox("NEWS DRIVER", ["NONE", "LOW", "MEDIUM", "HIGH", "RED FOLDER", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"])
+            # STRICT LIST: No Red Folder.
+            v_news = st.selectbox("NEWS DRIVER", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"])
             
         with c2:
             v_high = st.number_input("SESSION HIGH PRICE", value=0.0, format="%.2f")
@@ -130,8 +130,8 @@ def render_volatility_tab():
                                                 e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
                                                 e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
                                                 
-                                                # UPDATED SYNC: List of news options for EDIT form
-                                                news_options = ["NONE", "LOW", "MEDIUM", "HIGH", "RED FOLDER", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"]
+                                                # STRICT LIST SYNC
+                                                news_options = ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"]
                                                 e_news = ec1.selectbox("NEWS", news_options, index=news_options.index(row['news_impact']) if row['news_impact'] in news_options else 0)
                                                 
                                                 e_high = ec2.number_input("HIGH", value=float(row['high_price']), format="%.2f")
