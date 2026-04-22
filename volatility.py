@@ -8,12 +8,17 @@ def render_volatility_tab():
     st.markdown('<h2 style="color: #FF4B4B;">📊 SESSION TAPE ARCHIVE</h2>', unsafe_allow_html=True)
     supabase = get_supabase()
 
-    active_mkt = st.session_state.get('active_market', 'ALL MARKETS')
-    if active_mkt == 'ALL MARKETS':
-        st.warning("⚠️ Please select a specific Market in the sidebar to log tape data.")
-        return
+    # 1. FETCH MARKETS FOR DROPDOWN
+    try:
+        mkt_resp = supabase.table("markets").select("market_name").eq("trader_username", st.session_state.user).execute()
+        markets = [r['market_name'] for r in mkt_resp.data]
+    except:
+        markets = []
 
-    # 1. DEFINE SESSION BOUNDARIES (NY TIME)
+    # Get sidebar focus
+    sidebar_mkt = st.session_state.get('active_market', 'ALL MARKETS')
+
+    # 2. SESSION BOUNDARIES (NY TIME)
     session_defaults = {
         "CBDR (4pm-8pm)": time(16, 0),
         "ASIA (8pm-12am)": time(20, 0),
@@ -22,14 +27,23 @@ def render_volatility_tab():
         "NY PM (12pm-4pm)": time(12, 0)
     }
 
-    # 2. DATA ENTRY FORM
-    st.write(f"### 📝 LOG {active_mkt} SESSION TAPE")
+    # 3. DATA ENTRY FORM (ALWAYS VISIBLE)
+    st.write("### 📝 LOG SESSION TAPE")
     with st.form("vol_standalone_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             v_date = st.date_input("DATE", datetime.now())
+            
+            # If sidebar is 'ALL', show dropdown. If sidebar is specific, lock it.
+            if sidebar_mkt == "ALL MARKETS":
+                v_mkt = st.selectbox("MARKET", markets)
+            else:
+                st.info(f"Target Market: **{sidebar_mkt}** (Locked via Sidebar)")
+                v_mkt = sidebar_mkt
+                
             v_sess = st.selectbox("SESSION", list(session_defaults.keys()))
             v_news = st.selectbox("NEWS DRIVER", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
+        
         with c2:
             v_high = st.number_input("SESSION HIGH PRICE", value=0.0, format="%.2f")
             v_low = st.number_input("SESSION LOW PRICE", value=0.0, format="%.2f")
@@ -38,64 +52,53 @@ def render_volatility_tab():
         st.divider()
         st.write("**TIME OF PEAK/TROUGH (NY TIME)**")
         t1, t2 = st.columns(2)
-        
-        # Defaulting start time to the session open you provided
         time_low = t1.time_input("TIME OF LOW", value=session_defaults[v_sess])
         time_high = t2.time_input("TIME OF HIGH", value=session_defaults[v_sess])
 
         if st.form_submit_button("📥 ARCHIVE SESSION TAPE"):
-            # MATH ENGINE
             handles = abs(v_high - v_low)
-            
-            # Smart Time Delta (Handles Midnight Crossovers)
             dt_low = datetime.combine(v_date, time_low)
             dt_high = datetime.combine(v_date, time_high)
-            
             diff = dt_high - dt_low
             duration = abs(diff.total_seconds() / 60)
-            
-            # If duration > 720 mins (12 hours), it's likely a midnight crossover error, 
-            # we subtract from 24 hours to get the real duration
-            if duration > 720: 
-                duration = 1440 - duration
+            if duration > 720: duration = 1440 - duration
             
             velocity = round(handles / duration, 2) if duration > 0 else 0
             
             vol_data = {
-                "trader_username": st.session_state.user,
-                "date": str(v_date),
-                "market": active_mkt,
-                "news_impact": v_news,
-                "session": v_sess,
-                "tp_handles": handles,
-                "duration_mins": duration,
-                "notes": f"TAPE: {v_dir} | VEL: {velocity}H/m | LOW: {time_low} | HIGH: {time_high}",
-                "hindsight": True,
-                "model_name": "SESSION_TAPE"
+                "trader_username": st.session_state.user, "date": str(v_date), "market": v_mkt,
+                "news_impact": v_news, "session": v_sess, "tp_handles": handles,
+                "duration_mins": duration, "hindsight": True, "model_name": "SESSION_TAPE",
+                "notes": f"TAPE: {v_dir} | VEL: {velocity}H/m | LOW: {time_low} | HIGH: {time_high}"
             }
             
             try:
                 supabase.table("trades").insert(vol_data).execute()
-                st.success(f"Archived {v_sess}: {handles} Handles in {int(duration)} mins")
+                st.success(f"Archived {v_mkt} {v_sess}: {handles} Handles in {int(duration)} mins")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
 
-    # 3. ANALYTICS
+    # 4. ANALYTICS (Filtered by Sidebar Market)
     try:
-        res = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).eq("model_name", "SESSION_TAPE").eq("market", active_mkt).execute()
+        query = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).eq("model_name", "SESSION_TAPE")
+        if sidebar_mkt != "ALL MARKETS":
+            query = query.eq("market", sidebar_mkt)
+        res = query.execute()
         df = pd.DataFrame(res.data)
-    except: df = pd.DataFrame()
+    except:
+        df = pd.DataFrame()
 
     if df.empty:
-        st.info(f"No standalone tape data for {active_mkt} yet."); return
+        st.info("Archive empty. Log your first session above."); return
 
     df['date_dt'] = pd.to_datetime(df['date'])
     df['Day'] = df['date_dt'].dt.day_name()
     df['vel'] = df['notes'].apply(lambda x: float(x.split("VEL: ")[1].split("H/m")[0]) if "VEL:" in str(x) else 0.0)
 
     st.divider()
-    st.write(f"### 🧬 {active_mkt} VOLATILITY DNA")
+    title_label = sidebar_mkt if sidebar_mkt != "ALL MARKETS" else "GLOBAL"
+    st.write(f"### 🧬 {title_label} VOLATILITY DNA")
     
     g1, g2 = st.columns(2)
     with g1:
