@@ -52,7 +52,7 @@ def render_forge():
             dt = st.date_input("DATE", datetime.now())
             
         st.divider()
-        st.write("### 📏 RELEVANT SESSION RANGES")
+        st.write("### 📏 RELEVANT SESSION RANGES (HANDLES)")
         # Dynamic Selection Logic
         selected_sessions = st.multiselect("SELECT SESSIONS TO LOG VOLATILITY", ["CBDR", "ASIA", "LONDON", "NY AM", "NY PM"])
         
@@ -60,9 +60,11 @@ def render_forge():
         ranges = {"CBDR": None, "ASIA": None, "LONDON": None, "NY AM": None, "NY PM": None}
         
         if selected_sessions:
+            # Create a row of boxes for every session selected
             r_cols = st.columns(len(selected_sessions))
             for i, sess_name in enumerate(selected_sessions):
-                ranges[sess_name] = r_cols[i].number_input(f"{sess_name} Handles", value=0.0)
+                # Using 0.25 step for handle precision (NQ/ES)
+                ranges[sess_name] = r_cols[i].number_input(f"{sess_name} Handles", value=0.0, step=0.25)
 
         st.divider()
         nts = st.text_area("CONFLUENCE NOTES / PSYCHOLOGY")
