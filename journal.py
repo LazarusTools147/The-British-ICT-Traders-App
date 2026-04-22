@@ -70,10 +70,12 @@ def render_journal_tab():
 def render_trade_list(t_df, supabase):
     for _, row in t_df.iterrows():
         res = row.get('result', 'BE')
+        # Safety check for the new direction/side data
         side = row.get('direction', 'BUY')
+        if side not in ["BUY", "SELL"]: side = "BUY"
+        
         side_color = "#00FF00" if side == "BUY" else "#FF0000"
         res_color = "#00FF00" if res == "WIN" else "#FF0000" if res == "LOSS" else "#808080"
-        
         header = f"{row.get('model_name')} | {row.get('market')} | {row['date_dt'].strftime('%d %b')} | {round(row.get('rr', 0), 2)}R"
         
         with st.expander(header):
@@ -110,6 +112,7 @@ def render_trade_list(t_df, supabase):
                     
                     e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
                     
+                    # MANDATORY FORM SUBMIT BUTTON
                     if st.form_submit_button("💾 SAVE CHANGES"):
                         sl_h = abs(e_price - e_sl_p); tp_h = abs(e_price - e_tp_p); rr = tp_h / sl_h if sl_h != 0 else 0
                         up = {
@@ -121,26 +124,22 @@ def render_trade_list(t_df, supabase):
                         }
                         supabase.table("trades").update(up).eq("id", row['id']).execute()
                         st.session_state.editing_id = None; st.rerun()
-                if st.button("❌ CANCEL", key=f"cn_{row['id']}"): st.session_state.editing_id = None; st.rerun()
+                
+                if st.button("❌ CANCEL", key=f"cn_{row['id']}"): 
+                    st.session_state.editing_id = None; st.rerun()
             else:
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.write(f"**ENV:** `{row.get('type')}`")
-                    st.write(f"**VAR:** `{row.get('model_var')}`")
-                    st.write(f"**TIME:** `{row.get('entry_time')}`")
-                    st.write(f"**SESS:** `{row.get('session')}`")
-                    st.write(f"**SIDE:** :{side_color}[**{side}**]") # DIRECTION ADDED
+                    st.write(f"**ENV:** `{row.get('type')}`"); st.write(f"**VAR:** `{row.get('model_var')}`")
+                    st.write(f"**TIME:** `{row.get('entry_time')}`"); st.write(f"**SESS:** `{row.get('session')}`")
+                    st.write(f"**SIDE:** :{side_color}[**{side}**]")
                 with c2:
-                    st.write(f"**ENTRY:** `{row.get('entry_price')}`")
-                    st.write(f"**SL:** `{row.get('sl_price')}`")
-                    st.write(f"**TP:** `{row.get('tp_price')}`")
-                    st.write(f"**DUR:** `{row.get('duration_mins')} mins`")
+                    st.write(f"**ENTRY:** `{row.get('entry_price')}`"); st.write(f"**SL:** `{row.get('sl_price')}`")
+                    st.write(f"**TP:** `{row.get('tp_price')}`"); st.write(f"**DUR:** `{row.get('duration_mins')} mins`")
                     st.write(f"**TF:** `{row.get('entry_tf')}`")
                 with c3:
-                    st.write(f"**RISK:** `{row.get('risk_pc')}%` ")
-                    st.write(f"**RESULT:** :{res_color}[**{res}**]")
-                    st.write(f"**NEWS:** `{row.get('news_impact')}`")
-                    st.write(f"**HANDLES:** `{round(row.get('tp_handles', 0), 1)}`")
+                    st.write(f"**RISK:** `{row.get('risk_pc')}%` "); st.write(f"**RESULT:** :{res_color}[**{res}**]")
+                    st.write(f"**NEWS:** `{row.get('news_impact')}`"); st.write(f"**HANDLES:** `{round(row.get('tp_handles', 0), 1)}`")
                     st.write(f"**RR:** `{round(row.get('rr', 0), 2)}R`")
                 
                 st.divider()
@@ -154,6 +153,11 @@ def render_trade_list(t_df, supabase):
                     if val and val > 0: v_cols[i].caption(f"**{label}:** {val}")
 
                 if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
-                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
-                if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                
+                b1, b2 = st.columns([1, 4])
+                with b1:
+                    if st.button("✏️ EDIT", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
+                with b2:
+                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                
                 st.info(f"**NOTES:** {row.get('notes')}"); st.divider()
