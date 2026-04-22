@@ -11,10 +11,57 @@ def image_to_base64(uploaded_file):
     return None
 
 def render_architect_tab():
-    st.markdown('<h2 style="color: #FF4B4B;">📐 MODEL ARCHITECT</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 style="color: #FF4B4B;">📐 COMMAND CENTER</h2>', unsafe_allow_html=True)
     supabase = get_supabase()
-    
-    # 1. CREATE NEW MODEL SECTION
+
+    # --- 1. MARKET ARCHITECT (NEW SECTION) ---
+    with st.expander("🌐 MARKET ARCHITECT", expanded=True):
+        st.write("Define your markets and volatility profiles to enable smart analytics.")
+        with st.form("new_market_form", clear_on_submit=True):
+            mc1, mc2, mc3 = st.columns(3)
+            with mc1:
+                m_name = st.text_input("MARKET NAME (e.g. NQ, ES, OIL)").upper().strip()
+            with mc2:
+                m_profile = st.selectbox("VOLATILITY PROFILE", ["High (NQ/DAX)", "Mid (ES/Gold)", "Low/Decimal (Oil/FX)"])
+            with mc3:
+                # Default bucket suggestions based on profile
+                default_buckets = {"High (NQ/DAX)": 10.0, "Mid (ES/Gold)": 2.5, "Low/Decimal (Oil/FX)": 0.5}
+                m_bucket = st.number_input("BUCKET SIZE (HANDLES)", value=default_buckets[m_profile], step=0.1)
+
+            if st.form_submit_button("REGISTER MARKET"):
+                if m_name:
+                    m_data = {
+                        "trader_username": st.session_state.user,
+                        "market_name": m_name,
+                        "volatility_profile": m_profile,
+                        "bucket_size": m_bucket
+                    }
+                    try:
+                        supabase.table("markets").insert(m_data).execute()
+                        st.success(f"✔️ {m_name} REGISTERED")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"DB Error: {e}")
+                else:
+                    st.warning("Market name required.")
+
+        # Show registered markets
+        try:
+            m_res = supabase.table("markets").select("*").eq("trader_username", st.session_state.user).execute()
+            if m_res.data:
+                st.write("**Registered Markets:**")
+                m_df = pd.DataFrame(m_res.data)
+                for _, m_row in m_df.iterrows():
+                    m_col1, m_col2 = st.columns([4, 1])
+                    m_col1.caption(f"**{m_row['market_name']}** | Profile: {m_row['volatility_profile']} | Buckets: {m_row['bucket_size']}H")
+                    if m_col2.button("🗑️", key=f"del_m_{m_row['id']}"):
+                        supabase.table("markets").delete().eq("id", m_row['id']).execute()
+                        st.rerun()
+        except: pass
+
+    st.divider()
+
+    # --- 2. MODEL ARCHITECT ---
     with st.expander("✨ ARCHITECT NEW MODEL", expanded=False):
         with st.form("new_model_form", clear_on_submit=True):
             c1, c2 = st.columns([1, 1])
@@ -48,11 +95,10 @@ def render_architect_tab():
 
     st.divider()
 
-    # 2. MODEL REPOSITORY (READ / UPDATE / DELETE)
+    # --- 3. MODEL REPOSITORY ---
     st.write("### 📚 MODEL REPOSITORY")
     
     try:
-        # Fetch models ordered by newest first
         res = supabase.table("models").select("*").eq("trader_username", st.session_state.user).order("created_at", desc=True).execute()
         models_df = pd.DataFrame(res.data)
     except Exception as e:
@@ -60,7 +106,7 @@ def render_architect_tab():
         models_df = pd.DataFrame()
 
     if models_df.empty:
-        st.info("No models architected yet. Use the section above to create your first one.")
+        st.info("No models architected yet.")
         return
 
     for _, row in models_df.iterrows():
@@ -84,5 +130,5 @@ def render_architect_tab():
                 
                 if col_del.form_submit_button("🗑️ DELETE MODEL"):
                     supabase.table("models").delete().eq("id", row['id']).execute()
-                    st.warning("Model purged from repository.")
+                    st.warning("Model purged.")
                     st.rerun()

@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="ICT_MASTER_TERMINAL_V9.0",
     page_icon="🎯",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded" # Changed to expanded to show the new filter
 )
 
 # Institutional Styling Injection
@@ -62,21 +62,54 @@ if not st.session_state.auth:
 
 # --- 4. DATA SYNCHRONIZATION ---
 try:
-    response = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
-    all_trades = pd.DataFrame(response.data)
+    # 1. Sync all trades
+    t_resp = supabase.table("trades").select("*").eq("trader_username", st.session_state.user).execute()
+    all_trades = pd.DataFrame(t_resp.data)
+    
+    # 2. Sync registered markets for the filter
+    m_resp = supabase.table("markets").select("*").eq("trader_username", st.session_state.user).execute()
+    user_markets = pd.DataFrame(m_resp.data)
 except Exception as e:
-    st.error(f"SYSTEM_ERROR: Unable to sync private vault data. {e}")
+    st.error(f"SYSTEM_ERROR: Data Sync Failed. {e}")
     all_trades = pd.DataFrame()
+    user_markets = pd.DataFrame()
 
-# --- 5. NAVIGATION (THE TABS) ---
+# --- 5. SIDEBAR CONTROLS (GLOBAL FILTER) ---
+st.sidebar.title("🎮 TERMINAL_CONTROLS")
+st.sidebar.write(f"USER: **{st.session_state.user}**")
+
+st.sidebar.divider()
+st.sidebar.subheader("🎯 MARKET FOCUS")
+
+if not user_markets.empty:
+    market_list = ["ALL MARKETS"] + sorted(user_markets['market_name'].tolist())
+    selected_focus = st.sidebar.selectbox("SELECT ACTIVE DATASET", market_list)
+    
+    # Store the bucket size for the selected market in session state
+    if selected_focus != "ALL MARKETS":
+        m_info = user_markets[user_markets['market_name'] == selected_focus].iloc[0]
+        st.session_state.market_focus = selected_focus
+        st.session_state.bucket_size = float(m_info['bucket_size'])
+    else:
+        st.session_state.market_focus = "ALL"
+        st.session_state.bucket_size = 10.0 # Default for mixed data
+else:
+    st.sidebar.warning("No Markets Registered. Add them in ARCHITECT.")
+    st.session_state.market_focus = "ALL"
+    st.session_state.bucket_size = 10.0
+
+st.sidebar.divider()
+if st.sidebar.button("🔒 SECURE_LOGOUT"):
+    st.session_state.auth = False
+    st.session_state.user = None
+    st.rerun()
+
+st.sidebar.info("v9.0 Multi-Market System | 2026 Edition")
+
+# --- 6. NAVIGATION (THE TABS) ---
 tabs = st.tabs([
-    "📐 ARCHITECT", 
-    "🔥 THE_FORGE", 
-    "📊 LIVE_DATA", 
-    "🧪 TEST_DATA", 
-    "📓 JOURNAL", 
-    "📉 PORTFOLIO/DCA", 
-    "📈 COMPOUNDER"
+    "📐 ARCHITECT", "🔥 THE_FORGE", "📊 LIVE_DATA", "🧪 TEST_DATA", 
+    "📓 JOURNAL", "📉 PORTFOLIO/DCA", "📈 COMPOUNDER"
 ])
 
 with tabs[0]: 
@@ -85,21 +118,21 @@ with tabs[0]:
 with tabs[1]: 
     render_forge()
 
-with tabs[2]:
+with tabs[2]: # LIVE PERFORMANCE
     if not all_trades.empty:
-        # Filter for Live trades that are NOT study/hindsight
-        live_trades = all_trades[(all_trades['type'] == 'LIVE') & (all_trades['hindsight'] == False)]
-        render_analytics(live_trades, "LIVE")
-    else:
-        st.info("Cloud Vault is empty.")
+        df = all_trades[(all_trades['type'] == 'LIVE') & (all_trades['hindsight'] == False)]
+        if st.session_state.market_focus != "ALL":
+            df = df[df['market'] == st.session_state.market_focus]
+        render_analytics(df, f"LIVE ({st.session_state.market_focus})")
+    else: st.info("Vault empty.")
 
-with tabs[3]:
+with tabs[3]: # TEST PERFORMANCE
     if not all_trades.empty:
-        # Include Hindsight and Demo in the Test/Study view
-        test_trades = all_trades[(all_trades['type'] == 'BACKTEST/DEMO') | (all_trades['hindsight'] == True)]
-        render_analytics(test_trades, "STUDY/TEST")
-    else:
-        st.info("Cloud Vault is empty.")
+        df = all_trades[(all_trades['type'] == 'BACKTEST/DEMO') | (all_trades['hindsight'] == True)]
+        if st.session_state.market_focus != "ALL":
+            df = df[df['market'] == st.session_state.market_focus]
+        render_analytics(df, f"STUDY ({st.session_state.market_focus})")
+    else: st.info("Vault empty.")
 
 with tabs[4]: 
     render_journal_tab()
@@ -109,16 +142,3 @@ with tabs[5]:
 
 with tabs[6]: 
     render_compounder()
-
-# --- 6. SIDEBAR UTILITIES ---
-st.sidebar.title("TERMINAL_CONTROLS")
-st.sidebar.write(f"Logged in as: **{st.session_state.user}**")
-
-if st.sidebar.button("🔒 SECURE_LOGOUT"):
-    st.session_state.auth = False
-    st.session_state.user = None
-    st.rerun()
-
-st.sidebar.divider()
-st.sidebar.info("v9.0 Multi-User Cloud Build | 2026 Institutional Edition")
-st.sidebar.write("System Status: **🟢 ONLINE**")
