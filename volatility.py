@@ -75,9 +75,10 @@ def render_volatility_tab():
 
     if not df.empty:
         df['date_dt'] = pd.to_datetime(df['date'])
-        df['Day'] = df['date_dt'].dt.day_name()
+        df['DayName'] = df['date_dt'].dt.day_name()
         df['Year'] = df['date_dt'].dt.year
         df['Month'] = df['date_dt'].dt.strftime('%B')
+        df['DayNum'] = df['date_dt'].dt.day
         df['vel'] = df['notes'].apply(lambda x: float(x.split("VEL: ")[1].split("H/m")[0]) if "VEL:" in str(x) else 0.0)
 
         st.divider()
@@ -88,12 +89,12 @@ def render_volatility_tab():
         with g2:
             st.write("**Speed (H/m) by Day**")
             day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-            st.line_chart(df.groupby('Day')['vel'].mean().reindex(day_order))
+            st.line_chart(df.groupby('DayName')['vel'].mean().reindex(day_order))
             
         st.write("**Velocity vs Delivery Time**")
         fig = px.scatter(df, x='duration_mins', y='handles', size='vel', color='session',
                          labels={'duration_mins': 'Move Time (Mins)', 'handles': 'Handles'},
-                         hover_data=['Day', 'news_impact'])
+                         hover_data=['DayName', 'news_impact'])
         fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
 
@@ -102,60 +103,67 @@ def render_volatility_tab():
         st.write("### 📜 TAPE HISTORY")
         
         for yr in sorted(df['Year'].unique(), reverse=True):
-            with st.expander(f"📁 {yr}", expanded=False):
+            with st.expander(f"📁 YEAR: {yr}", expanded=False):
                 yr_df = df[df['Year'] == yr]
-                for mo in yr_df['date_dt'].dt.strftime('%B').unique():
-                    mo_df = yr_df[yr_df['date_dt'].dt.strftime('%B') == mo].sort_values('date', ascending=False)
-                    with st.expander(f"📅 {mo.upper()}"):
-                        for _, row in mo_df.iterrows():
-                            # Header styling
-                            h_color = "#00FF00" if "BULLISH" in row['direction'] else "#FF0000" if "BEARISH" in row['direction'] else "#808080"
-                            label = f"{row['date']} | {row['session']} | {row['market']} | {row['handles']}H"
-                            
-                            with st.expander(label):
-                                if st.session_state.get('editing_tape_id') == row['id']:
-                                    with st.form(f"edit_tape_{row['id']}"):
-                                        ec1, ec2 = st.columns(2)
-                                        e_date = ec1.date_input("DATE", value=row['date_dt'].date())
-                                        e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
-                                        e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
-                                        e_news = ec1.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row['news_impact']))
-                                        
-                                        e_high = ec2.number_input("HIGH", value=float(row['high_price']), format="%.2f")
-                                        e_low = ec2.number_input("LOW", value=float(row['low_price']), format="%.2f")
-                                        e_dir = ec2.selectbox("DIRECTION", ["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"], index=["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"].index(row['direction']))
-                                        
-                                        t_low_obj = datetime.strptime(row['time_low'], "%H:%M:%S").time() if row['time_low'] else time(8,0)
-                                        t_high_obj = datetime.strptime(row['time_high'], "%H:%M:%S").time() if row['time_high'] else time(10,0)
-                                        e_tlow = ec2.time_input("TIME LOW", value=t_low_obj)
-                                        e_thigh = ec2.time_input("TIME HIGH", value=t_high_obj)
-
-                                        if st.form_submit_button("💾 UPDATE TAPE"):
-                                            h = float(abs(e_high - e_low))
-                                            d = int(abs((datetime.combine(e_date, e_thigh) - datetime.combine(e_date, e_tlow)).total_seconds() / 60))
-                                            if d == 0: d = 1
-                                            v = round(h/d, 2)
-                                            up = {
-                                                "date": str(e_date), "market": e_mkt, "session": e_sess, 
-                                                "news_impact": e_news, "high_price": e_high, "low_price": e_low,
-                                                "direction": e_dir, "handles": h, "duration_mins": d,
-                                                "time_low": str(e_tlow), "time_high": str(e_thigh), "notes": f"VEL: {v}H/m"
-                                            }
-                                            supabase.table("session_tape").update(up).eq("id", row['id']).execute()
-                                            st.session_state.editing_tape_id = None; st.rerun()
-                                    if st.button("❌ CANCEL", key=f"can_{row['id']}"):
-                                        st.session_state.editing_tape_id = None; st.rerun()
-                                else:
-                                    # Display View
-                                    c1, c2, c3 = st.columns(3)
-                                    c1.write(f"**BIAS:** :{h_color}[{row['direction']}]")
-                                    c1.write(f"**NEWS:** `{row['news_impact']}`")
-                                    c2.write(f"**HIGH:** `{row['high_price']}`")
-                                    c2.write(f"**LOW:** `{row['low_price']}`")
-                                    c3.write(f"**DURATION:** `{row['duration_mins']} mins`")
-                                    c3.write(f"**VELOCITY:** `{row['notes']}`")
+                # Sort months correctly using datetime
+                months = sorted(yr_df['date_dt'].dt.month.unique(), reverse=True)
+                for m_num in months:
+                    mo_df = yr_df[yr_df['date_dt'].dt.month == m_num]
+                    mo_name = mo_df['Month'].iloc[0].upper()
+                    with st.expander(f"📅 MONTH: {mo_name}"):
+                        # Group by actual Day
+                        days = sorted(mo_df['date_dt'].dt.date.unique(), reverse=True)
+                        for d_date in days:
+                            d_df = mo_df[mo_df['date_dt'].dt.date == d_date]
+                            d_name = d_date.strftime('%A %d').upper()
+                            with st.expander(f"📍 DAY: {d_name} ({len(d_df)} Sessions)"):
+                                for _, row in d_df.iterrows():
+                                    h_color = "#00FF00" if "BULLISH" in row['direction'] else "#FF0000" if "BEARISH" in row['direction'] else "#808080"
+                                    label = f"{row['session']} | {row['market']} | {row['handles']}H"
                                     
-                                    if st.button("✏️ EDIT ENTRY", key=f"ed_btn_{row['id']}"):
-                                        st.session_state.editing_tape_id = row['id']; st.rerun()
+                                    with st.expander(label):
+                                        if st.session_state.get('editing_tape_id') == row['id']:
+                                            with st.form(f"edit_tape_{row['id']}"):
+                                                ec1, ec2 = st.columns(2)
+                                                e_date = ec1.date_input("DATE", value=row['date_dt'].date())
+                                                e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
+                                                e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
+                                                e_news = ec1.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row['news_impact']))
+                                                
+                                                e_high = ec2.number_input("HIGH", value=float(row['high_price']), format="%.2f")
+                                                e_low = ec2.number_input("LOW", value=float(row['low_price']), format="%.2f")
+                                                e_dir = ec2.selectbox("DIRECTION", ["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"], index=["LOW TO HIGH (BULLISH)", "HIGH TO LOW (BEARISH)", "CONSOLIDATION"].index(row['direction']))
+                                                
+                                                t_low_obj = datetime.strptime(row['time_low'], "%H:%M:%S").time() if row['time_low'] else time(8,0)
+                                                t_high_obj = datetime.strptime(row['time_high'], "%H:%M:%S").time() if row['time_high'] else time(10,0)
+                                                e_tlow = ec2.time_input("TIME LOW", value=t_low_obj)
+                                                e_thigh = ec2.time_input("TIME HIGH", value=t_high_obj)
+
+                                                if st.form_submit_button("💾 UPDATE TAPE"):
+                                                    h = float(abs(e_high - e_low))
+                                                    d = int(abs((datetime.combine(e_date, e_thigh) - datetime.combine(e_date, e_tlow)).total_seconds() / 60))
+                                                    if d == 0: d = 1
+                                                    v = round(h/d, 2)
+                                                    up = {
+                                                        "date": str(e_date), "market": e_mkt, "session": e_sess, 
+                                                        "news_impact": e_news, "high_price": e_high, "low_price": e_low,
+                                                        "direction": e_dir, "handles": h, "duration_mins": d,
+                                                        "time_low": str(e_tlow), "time_high": str(e_thigh), "notes": f"VEL: {v}H/m"
+                                                    }
+                                                    supabase.table("session_tape").update(up).eq("id", row['id']).execute()
+                                                    st.session_state.editing_tape_id = None; st.rerun()
+                                            if st.button("❌ CANCEL", key=f"can_{row['id']}"):
+                                                st.session_state.editing_tape_id = None; st.rerun()
+                                        else:
+                                            c1, c2, c3 = st.columns(3)
+                                            c1.write(f"**BIAS:** :{h_color}[{row['direction']}]")
+                                            c1.write(f"**NEWS:** `{row['news_impact']}`")
+                                            c2.write(f"**HIGH:** `{row['high_price']}`")
+                                            c2.write(f"**LOW:** `{row['low_price']}`")
+                                            c3.write(f"**DURATION:** `{row['duration_mins']} mins`")
+                                            c3.write(f"**VELOCITY:** `{row['notes']}`")
+                                            
+                                            if st.button("✏️ EDIT ENTRY", key=f"ed_btn_{row['id']}"):
+                                                st.session_state.editing_tape_id = row['id']; st.rerun()
     else:
         st.info("Archive empty. Log a session to see DNA.")
