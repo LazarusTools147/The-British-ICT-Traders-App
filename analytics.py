@@ -3,34 +3,42 @@ import pandas as pd
 import plotly.express as px
 
 def render_range_bar(sub_df, col_name, title, color):
-    """Renders a high-density bar chart for session volatility handles."""
+    """Renders a high-density histogram grouped into 10-handle buckets."""
     if col_name in sub_df.columns and not sub_df[col_name].dropna().empty:
-        # We use a histogram to show frequency of handle sizes
+        # Create a copy to avoid modifying the original dataframe
+        plot_df = sub_df[sub_df[col_name] > 0].copy()
+        
+        # This forces the histogram to bin in 10-handle increments
         fig = px.histogram(
-            sub_df, 
+            plot_df, 
             x=col_name, 
-            nbins=15, 
             title=title, 
             color_discrete_sequence=[color],
+            nbins=20, # Initial suggestion for granularity
             labels={col_name: 'Handles', 'count': 'Freq'}
         )
+        
+        fig.update_traces(
+            xbins=dict(start=0, end=1000, size=10), # Force 10-handle buckets
+            texttemplate='%{y}', 
+            textposition='outside'
+        )
+        
         fig.update_layout(
             showlegend=False,
             height=200, 
             margin=dict(t=30, b=10, l=0, r=0),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(showgrid=False),
+            xaxis=dict(showgrid=False, dtick=20), # Labels every 20 handles for clarity
             yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
         )
-        # Display the count on top of the bars
-        fig.update_traces(texttemplate='%{y}', textposition='outside')
         st.plotly_chart(fig, use_container_width=True, key=f"bar_{col_name}_{title}_{color}")
     else:
         st.caption(f"No {title} data")
 
 def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
-    """Rebuilds the deep dive with Donut charts AND the 5-Bar Volatility Row."""
+    """Rebuilds the deep dive with Donut charts, Volatility Averages, and the 5-Bar Row."""
     if sub_df.empty:
         st.info(f"No {title_prefix} data recorded yet.")
         return
@@ -46,6 +54,19 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
         st.metric(f"AVG {title_prefix} TIME", f"{round(avg_dur, 1)}m")
         if not sub_df['model_name'].empty:
             st.write(f"**Top Model:** `{sub_df['model_name'].mode()[0]}`")
+
+    # --- NEW: VOLATILITY AVERAGES ROW ---
+    st.divider()
+    st.write(f"### 📈 AVG SESSION SIZE IN {title_prefix}S")
+    a1, a2, a3, a4, a5 = st.columns(5)
+    sessions = [('cbdr_size', 'CBDR', a1), ('asia_size', 'ASIA', a2), 
+                ('london_size', 'LON', a3), ('ny_am_size', 'NYAM', a4), ('ny_pm_size', 'NYPM', a5)]
+    
+    for col_db, label, slot in sessions:
+        if col_db in sub_df.columns:
+            # Only average values greater than zero
+            avg_val = sub_df[sub_df[col_db] > 0][col_db].mean()
+            slot.metric(f"AVG {label}", f"{round(avg_val, 1)}H" if pd.notnull(avg_val) else "0H")
 
     # --- MIDDLE ROW: THE 6-DONUT GRID ---
     st.divider()
@@ -67,7 +88,7 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
                 st.caption("No Data")
 
     # --- BOTTOM ROW: 5-BAR VOLATILITY ROW ---
-    st.write("### 📏 SESSION VOLATILITY DISTRIBUTION (HANDLES)")
+    st.write("### 📏 SESSION VOLATILITY DISTRIBUTION (10H BUCKETS)")
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF")
     with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC")
