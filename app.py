@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from volatility import render_volatility_tab
 from database import init_db, get_supabase
 from components import render_forge, render_compounder
 from architect import render_architect_tab
