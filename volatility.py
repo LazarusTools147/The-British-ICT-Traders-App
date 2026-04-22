@@ -32,7 +32,10 @@ def render_volatility_tab():
             v_mkt = st.selectbox("MARKET", markets) if sidebar_mkt == "ALL MARKETS" else sidebar_mkt
             if sidebar_mkt != "ALL MARKETS": st.info(f"Target Market: **{sidebar_mkt}**")
             v_sess = st.selectbox("SESSION", list(session_defaults.keys()))
-            v_news = st.selectbox("NEWS DRIVER", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
+            
+            # UPDATED: NFP and CPI are now separate options
+            v_news = st.selectbox("NEWS DRIVER", ["NONE", "LOW", "MEDIUM", "HIGH", "RED FOLDER", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"])
+            
         with c2:
             v_high = st.number_input("SESSION HIGH PRICE", value=0.0, format="%.2f")
             v_low = st.number_input("SESSION LOW PRICE", value=0.0, format="%.2f")
@@ -105,13 +108,11 @@ def render_volatility_tab():
         for yr in sorted(df['Year'].unique(), reverse=True):
             with st.expander(f"📁 YEAR: {yr}", expanded=False):
                 yr_df = df[df['Year'] == yr]
-                # Sort months correctly using datetime
                 months = sorted(yr_df['date_dt'].dt.month.unique(), reverse=True)
                 for m_num in months:
                     mo_df = yr_df[yr_df['date_dt'].dt.month == m_num]
                     mo_name = mo_df['Month'].iloc[0].upper()
                     with st.expander(f"📅 MONTH: {mo_name}"):
-                        # Group by actual Day
                         days = sorted(mo_df['date_dt'].dt.date.unique(), reverse=True)
                         for d_date in days:
                             d_df = mo_df[mo_df['date_dt'].dt.date == d_date]
@@ -128,7 +129,10 @@ def render_volatility_tab():
                                                 e_date = ec1.date_input("DATE", value=row['date_dt'].date())
                                                 e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
                                                 e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
-                                                e_news = ec1.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "BANK HOLIDAY", "FOMC", "UNEMPLOYMENT CLAIMS", "OTHER", "CPI" ], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "BANK HOLIDAY", "FOMC", "UNEMPLOYMENT CLAIMS", "OTHER", "CPI"].index(row['news_impact']))
+                                                
+                                                # UPDATED SYNC: List of news options for EDIT form
+                                                news_options = ["NONE", "LOW", "MEDIUM", "HIGH", "RED FOLDER", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"]
+                                                e_news = ec1.selectbox("NEWS", news_options, index=news_options.index(row['news_impact']) if row['news_impact'] in news_options else 0)
                                                 
                                                 e_high = ec2.number_input("HIGH", value=float(row['high_price']), format="%.2f")
                                                 e_low = ec2.number_input("LOW", value=float(row['low_price']), format="%.2f")
