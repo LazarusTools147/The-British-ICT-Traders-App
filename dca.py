@@ -20,14 +20,14 @@ def render_dca_tab():
         
         if st.form_submit_button("📥 LOG ENTRY"):
             if symbol and entry_price > 0:
-                shares = amount_inv / entry_price
+                shares = float(amount_inv / entry_price)
                 new_entry = {
                     "trader_username": st.session_state.user,
                     "symbol": symbol,
                     "investment_date": str(v_date),
                     "entry_price": float(entry_price),
                     "amount": float(amount_inv),
-                    "shares": float(shares),
+                    "shares": shares,
                     "type": "DCA_LOG"
                 }
                 try:
@@ -43,53 +43,62 @@ def render_dca_tab():
     except: df = pd.DataFrame()
 
     if df.empty:
-        st.info("No positions found. Log your first buy above."); return
+        st.info("No positions found. Log your first buy above.")
+        return
 
     # --- 3. POSITION DASHBOARD & EDITOR ---
     st.divider()
     symbols = sorted(df['symbol'].unique())
     
     for stock in symbols:
+        # Sort history by date descending
         stock_df = df[df['symbol'] == stock].sort_values('investment_date', ascending=False)
         
+        # MATH: Weighted Totals
         total_invested = stock_df['amount'].sum()
         total_shares = stock_df['shares'].sum()
+        be_price = total_invested / total_shares if total_shares > 0 else 0
         
-        # BREAK-EVEN CALCULATION
-        break_even_price = total_invested / total_shares if total_shares > 0 else 0
-        
-        with st.expander(f"📁 {stock} | Total Invested: ${total_invested:,.2f}", expanded=True):
-            current_price = st.number_input(f"LIVE {stock} PRICE ($)", key=f"price_{stock}", value=break_even_price, step=0.01, format="%.2f")
+        with st.expander(f"📁 {stock} | BE: ${be_price:.2f}", expanded=True):
+            # Manual Price Update for P/L calculation
+            current_price = st.number_input(f"LIVE {stock} PRICE ($)", key=f"price_{stock}", value=be_price, step=0.01, format="%.2f")
             
-            p_l_pct = ((current_price - break_even_price) / break_even_price) * 100 if break_even_price > 0 else 0
+            p_l_pct = ((current_price - be_price) / be_price) * 100 if be_price > 0 else 0
             p_l_cash = (current_price * total_shares) - total_invested
             
             sc1, sc2, sc3, sc4 = st.columns(4)
-            sc1.metric("BREAK-EVEN PRICE", f"${break_even_price:.2f}")
-            sc2.metric("TOTAL SHARES", f"{total_shares:.4f}")
-            sc3.metric("CURRENT P/L %", f"{p_l_pct:.2f}%", delta=f"{p_l_pct:.2f}%")
-            sc4.metric("P/L CASH ($)", f"${p_l_cash:,.2f}")
+            sc1.metric("BREAK-EVEN", f"${be_price:.2f}")
+            sc2.metric("INVESTED", f"${total_invested:,.2f}")
+            sc3.metric("P/L %", f"{p_l_pct:.2f}%", delta=f"{p_l_pct:.2f}%")
+            sc4.metric("CASH P/L", f"${p_l_cash:,.2f}")
 
             st.write("---")
             st.write("**Entry History & Editor**")
             
             for _, row in stock_df.iterrows():
+                # Performance of this specific buy
                 entry_inc = ((current_price - row['entry_price']) / row['entry_price']) * 100
                 
                 if st.session_state.get('editing_dca_id') == row['id']:
                     with st.form(f"edit_dca_{row['id']}"):
+                        try:
+                            curr_date = pd.to_datetime(row['investment_date'])
+                        except:
+                            curr_date = datetime.now()
+
                         ec1, ec2, ec3 = st.columns(3)
-                        e_date = ec1.date_input("EDIT DATE", value=pd.to_datetime(row['investment_date']))
+                        e_date = ec1.date_input("EDIT DATE", value=curr_date)
                         e_price = ec2.number_input("EDIT PRICE", value=float(row['entry_price']))
                         e_amt = ec3.number_input("EDIT AMOUNT", value=float(row['amount']))
                         
+                        # THE SUBMIT BUTTON IS HERE
                         if st.form_submit_button("💾 SAVE CHANGES"):
-                            e_shares = e_amt / e_price
+                            e_shares = float(e_amt / e_price)
                             up_data = {
                                 "investment_date": str(e_date),
                                 "entry_price": float(e_price),
                                 "amount": float(e_amt),
-                                "shares": float(e_shares)
+                                "shares": e_shares
                             }
                             supabase.table("dca_vault").update(up_data).eq("id", row['id']).execute()
                             st.session_state.editing_dca_id = None
@@ -98,6 +107,7 @@ def render_dca_tab():
                         st.session_state.editing_dca_id = None
                         st.rerun()
                 else:
+                    # Regular View
                     c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
                     c1.write(f"📅 **{row['investment_date']}**")
                     c2.write(f"💵 ${row['entry_price']:.2f} | {row['shares']:.2f} Shrs")
