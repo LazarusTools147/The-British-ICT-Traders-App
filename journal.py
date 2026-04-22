@@ -122,22 +122,26 @@ def render_trade_list(t_df, supabase):
                         st.session_state.editing_id = None; st.rerun()
                 if st.button("❌ CANCEL", key=f"cn_{row['id']}"): st.session_state.editing_id = None; st.rerun()
             else:
+                # DATA DISPLAY - ALL FORGE FIELDS INCLUDED
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.write(f"**ENV:** `{row.get('type')}`")
                     st.write(f"**VAR:** `{row.get('model_var')}`")
                     st.write(f"**TIME:** `{row.get('entry_time')}`")
                     st.write(f"**SESS:** `{row.get('session')}`")
+                    st.write(f"**NEWS:** `{row.get('news_impact')}`")
                 with c2:
                     st.write(f"**ENTRY:** `{row.get('entry_price')}`")
                     st.write(f"**SL:** `{row.get('sl_price')}`")
                     st.write(f"**TP:** `{row.get('tp_price')}`")
+                    st.write(f"**TF:** `{row.get('entry_tf')}`")
                     st.write(f"**DUR:** `{row.get('duration_mins')} mins`")
                 with c3:
                     st.write(f"**RISK:** `{row.get('risk_pc')}%` ")
                     st.write(f"**RESULT:** :{color}[**{res}**]")
-                    st.write(f"**NEWS:** `{row.get('news_impact')}`")
                     st.write(f"**HANDLES:** `{round(row.get('tp_handles', 0), 1)}`")
+                    st.write(f"**RR:** `{round(row.get('rr', 0), 2)}R`")
+                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                 
                 st.divider()
                 st.write(f"**TYPE:** `{row.get('entry_type')}` | **TARGET:** `{row.get('target')}`")
@@ -151,10 +155,6 @@ def render_trade_list(t_df, supabase):
 
                 if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                 
-                b1, b2 = st.columns([1, 4])
-                with b1:
-                    if st.button("✏️ EDIT", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
-                with b2:
-                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
                 
                 st.info(f"**NOTES:** {row.get('notes')}"); st.divider()
