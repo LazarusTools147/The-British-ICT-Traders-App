@@ -92,13 +92,13 @@ def render_trade_list(t_df, supabase):
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_tar = st.text_input("TARGET", value=str(row.get('target', '')))
                     
-                    st.write("**VOLATILITY RANGES**")
+                    st.write("**VOLATILITY RANGES (HANDLES)**")
                     v1, v2, v3, v4, v5 = st.columns(5)
-                    e_cbdr = v1.number_input("CBDR", value=float(row.get('cbdr_size', 0.0)))
-                    e_asia = v2.number_input("ASIA", value=float(row.get('asia_size', 0.0)))
-                    e_lon = v3.number_input("LON", value=float(row.get('london_size', 0.0)))
-                    e_am = v4.number_input("NYAM", value=float(row.get('ny_am_size', 0.0)))
-                    e_pm = v5.number_input("NYPM", value=float(row.get('ny_pm_size', 0.0)))
+                    e_cbdr = v1.number_input("CBDR", value=float(row.get('cbdr_size') or 0.0), step=0.25)
+                    e_asia = v2.number_input("ASIA", value=float(row.get('asia_size') or 0.0), step=0.25)
+                    e_lon = v3.number_input("LON", value=float(row.get('london_size') or 0.0), step=0.25)
+                    e_am = v4.number_input("NYAM", value=float(row.get('ny_am_size') or 0.0), step=0.25)
+                    e_pm = v5.number_input("NYPM", value=float(row.get('ny_pm_size') or 0.0), step=0.25)
                     
                     e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
                     
@@ -130,6 +130,16 @@ def render_trade_list(t_df, supabase):
                     st.write(f"RISK: `{row.get('risk_pc')}%` "); st.write(f"RESULT: :{color}[**{res}**]")
                     if st.button("🗑️ PURGE", key=f"p_{row['id']}"):
                         supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                
+                # SESSION VOLATILITY DISPLAY ROW
+                st.write("**SESSION RANGES:**")
+                v_cols = st.columns(5)
+                v_data = [("CBDR", 'cbdr_size'), ("ASIA", 'asia_size'), ("LON", 'london_size'), ("AM", 'ny_am_size'), ("PM", 'ny_pm_size')]
+                for i, (label, col) in enumerate(v_data):
+                    val = row.get(col)
+                    if val and val > 0:
+                        v_cols[i].caption(f"**{label}:** {val}")
+
                 if row.get('screenshot_text'):
                     st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                 if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"):
