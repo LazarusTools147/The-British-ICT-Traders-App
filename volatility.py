@@ -128,7 +128,7 @@ def render_volatility_tab():
                                                 e_date = ec1.date_input("DATE", value=row['date_dt'].date())
                                                 e_mkt = ec1.selectbox("MARKET", markets, index=markets.index(row['market']) if row['market'] in markets else 0)
                                                 e_sess = ec1.selectbox("SESSION", list(session_defaults.keys()), index=list(session_defaults.keys()).index(row['session']))
-                                                e_news = ec1.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "BANK HOLIDAY", "FOMC", "UNEMPLOYMENT CLAIMS", "OTHER" ], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row['news_impact']))
+                                                e_news = ec1.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "BANK HOLIDAY", "FOMC", "UNEMPLOYMENT CLAIMS", "OTHER", "CPI" ], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "BANK HOLIDAY", "FOMC", "UNEMPLOYMENT CLAIMS", "OTHER", "CPI"].index(row['news_impact']))
                                                 
                                                 e_high = ec2.number_input("HIGH", value=float(row['high_price']), format="%.2f")
                                                 e_low = ec2.number_input("LOW", value=float(row['low_price']), format="%.2f")
