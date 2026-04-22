@@ -35,7 +35,9 @@ def render_journal_tab():
         st.metric("LIVE", live_c); st.metric("DEMO", demo_c); st.metric("STUDY", hind_c)
     
     st.divider()
+    
     cal = st.radio("TF", ["All Trades", "By Year", "By Month", "By Week", "By Day"], horizontal=True, label_visibility="collapsed")
+    
     f1, f2, f3 = st.columns(3)
     with f1: s_mod = st.selectbox("MODEL", ["ALL"] + sorted(df['model_name'].unique().tolist()))
     with f2: s_var = st.selectbox("VAR", ["ALL"] + sorted(df.get('model_var', pd.Series(['ALL'])).dropna().unique().tolist()))
@@ -43,8 +45,10 @@ def render_journal_tab():
     
     df['date_dt'] = pd.to_datetime(df['date'])
     tday = datetime.now().date()
+    
     if cal == "By Week": df = df[df['date_dt'].dt.date >= (tday - timedelta(days=7))]
     elif cal == "By Day": df = df[df['date_dt'].dt.date == tday]
+    
     if s_mod != "ALL": df = df[df['model_name'] == s_mod]
     if s_res != "ALL": df = df[df['result'] == s_res]
     
@@ -85,6 +89,7 @@ def render_trade_list(t_df, supabase):
                     with ec2:
                         e_type = st.text_input("ENTRY", value=str(row.get('entry_type', '')))
                         e_sess = st.text_input("SESS", value=str(row.get('session', '')))
+                        e_time = st.text_input("TIME", value=str(row.get('entry_time', '')))
                         e_sl_p = st.number_input("SL PRICE", value=float(row.get('sl_price', 0.0)), format="%.2f")
                         e_tp_p = st.number_input("TP PRICE", value=float(row.get('tp_price', 0.0)), format="%.2f")
                     with ec3:
@@ -103,45 +108,38 @@ def render_trade_list(t_df, supabase):
                     e_notes = st.text_area("NOTES", value=str(row.get('notes', '')))
                     
                     if st.form_submit_button("💾 SAVE CHANGES"):
-                        sl_h = abs(e_price - e_sl_p)
-                        tp_h = abs(e_price - e_tp_p)
-                        rr = tp_h / sl_h if sl_h != 0 else 0
+                        sl_h = abs(e_price - e_sl_p); tp_h = abs(e_price - e_tp_p); rr = tp_h / sl_h if sl_h != 0 else 0
                         up = {
-                            "date": str(e_date), "model_name": e_mod, "market": e_mkt, "entry_price": e_price,
-                            "entry_type": e_type, "session": e_sess, "sl_price": e_sl_p, "tp_price": e_tp_p,
-                            "result": e_res, "risk_pc": e_risk, "target": e_tar, "notes": e_notes,
-                            "sl_handles": sl_h, "tp_handles": tp_h, "rr": rr,
-                            "cbdr_size": e_cbdr, "asia_size": e_asia, "london_size": e_lon,
-                            "ny_am_size": e_am, "ny_pm_size": e_pm
+                            "date": str(e_date), "model_name": e_mod, "market": e_mkt, "entry_price": e_price, "entry_time": e_time,
+                            "entry_type": e_type, "session": e_sess, "sl_price": e_sl_p, "tp_price": e_tp_p, 
+                            "result": e_res, "risk_pc": e_risk, "target": e_tar, "notes": e_notes, 
+                            "sl_handles": sl_h, "tp_handles": tp_h, "rr": rr, 
+                            "cbdr_size": e_cbdr, "asia_size": e_asia, "london_size": e_lon, "ny_am_size": e_am, "ny_pm_size": e_pm
                         }
                         supabase.table("trades").update(up).eq("id", row['id']).execute()
                         st.session_state.editing_id = None; st.rerun()
-                if st.button("❌ CANCEL", key=f"cn_{row['id']}"):
-                    st.session_state.editing_id = None; st.rerun()
+                if st.button("❌ CANCEL", key=f"cn_{row['id']}"): st.session_state.editing_id = None; st.rerun()
             else:
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.write(f"ENTRY: `{row.get('entry_price')}`"); st.write(f"SESS: `{row.get('session')}`")
-                    st.write(f"TYPE: `{row.get('entry_type')}`"); st.write(f"TARGET: `{row.get('target')}`")
+                    st.write(f"ENTRY: `{row.get('entry_price')}`")
+                    st.write(f"TIME: `{row.get('entry_time')}`")
+                    st.write(f"SESS: `{row.get('session')}`")
                 with c2:
                     st.write(f"SL: `{row.get('sl_price')}`"); st.write(f"TP: `{row.get('tp_price')}`")
-                    st.write(f"HANDLES: `{round(row.get('tp_handles', 0), 1)}`")
+                    st.write(f"TYPE: `{row.get('entry_type')}`"); st.write(f"TARGET: `{row.get('target')}`")
                 with c3:
                     st.write(f"RISK: `{row.get('risk_pc')}%` "); st.write(f"RESULT: :{color}[**{res}**]")
-                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"):
-                        supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
+                    st.write(f"HANDLES: `{round(row.get('tp_handles', 0), 1)}`")
+                    if st.button("🗑️ PURGE", key=f"p_{row['id']}"): supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                 
-                # SESSION VOLATILITY DISPLAY ROW
                 st.write("**SESSION RANGES:**")
                 v_cols = st.columns(5)
                 v_data = [("CBDR", 'cbdr_size'), ("ASIA", 'asia_size'), ("LON", 'london_size'), ("AM", 'ny_am_size'), ("PM", 'ny_pm_size')]
                 for i, (label, col) in enumerate(v_data):
                     val = row.get(col)
-                    if val and val > 0:
-                        v_cols[i].caption(f"**{label}:** {val}")
+                    if val and val > 0: v_cols[i].caption(f"**{label}:** {val}")
 
-                if row.get('screenshot_text'):
-                    st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
-                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"):
-                    st.session_state.editing_id = row['id']; st.rerun()
+                if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
+                if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): st.session_state.editing_id = row['id']; st.rerun()
                 st.info(f"**NOTES:** {row.get('notes')}"); st.divider()
