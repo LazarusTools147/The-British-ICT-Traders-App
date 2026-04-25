@@ -36,8 +36,8 @@ def render_forge():
             mkt = st.selectbox("MARKET", markets) 
             side = st.selectbox("DIRECTION", ["BUY", "SELL"]) # New Buy/Sell Field
             is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
-            news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"])
-        
+            news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"])
+
         with c2:
             etype = st.text_input("ENTRY TYPE (e.g. SILVER BULLET, MSS)").upper()
             tm = st.text_input("ENTRY TIME (EST)")
