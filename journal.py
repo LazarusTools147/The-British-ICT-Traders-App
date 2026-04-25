@@ -68,7 +68,9 @@ def render_journal_tab():
         render_trade_list(df, supabase)
 
 def render_trade_list(t_df, supabase):
-    # Fetch registered markets once for the Edit dropdown
+    # Synchronized News Driver List
+    news_list = ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"]
+    
     try:
         mkt_resp = supabase.table("markets").select("market_name").eq("trader_username", st.session_state.user).execute()
         markets = [r['market_name'] for r in mkt_resp.data]
@@ -90,10 +92,15 @@ def render_trade_list(t_df, supabase):
                     st.write("### 🛠️ EDIT MASTER DATA")
                     ec1, ec2, ec3 = st.columns(3)
                     with ec1:
-                        e_date = st.date_input("DATE", value=row['date_dt'].date())
+                        # Safety check for date objects
+                        try:
+                            current_date_val = row['date_dt'].date()
+                        except:
+                            current_date_val = datetime.now().date()
+                        
+                        e_date = st.date_input("DATE", value=current_date_val)
                         e_mod = st.text_input("MODEL", value=str(row.get('model_name', '')))
                         e_var = st.text_input("VAR", value=str(row.get('model_var', '')))
-                        # MARKET DROPDOWN IN EDITOR
                         mkt_idx = markets.index(row['market']) if row['market'] in markets else 0
                         e_mkt = st.selectbox("MKT", markets, index=mkt_idx)
                         e_price = st.number_input("ENTRY PRICE", value=float(row.get('entry_price', 0.0)), format="%.2f")
@@ -108,7 +115,11 @@ def render_trade_list(t_df, supabase):
                         e_side = st.selectbox("SIDE", ["BUY", "SELL"], index=["BUY", "SELL"].index(side))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_tar = st.text_input("TARGET", value=str(row.get('target', '')))
-                        e_news = st.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"].index(row.get('news_impact', 'NONE')))
+                        
+                        # Correct index logic for News Driver
+                        n_current = row.get('news_impact', 'NONE')
+                        if n_current not in news_list: n_current = "NONE"
+                        e_news = st.selectbox("NEWS", news_list, index=news_list.index(n_current))
 
                     st.write("**VOLATILITY RANGES (HANDLES)**")
                     v1, v2, v3, v4, v5 = st.columns(5)
@@ -161,7 +172,6 @@ def render_trade_list(t_df, supabase):
 
                 if row.get('screenshot_text'): st.image(f"data:image/png;base64,{row['screenshot_text']}", use_container_width=True)
                 
-                # PURGE REMOVED - ONLY EDIT BUTTON REMAINS
                 if st.button("✏️ EDIT FULL DATA", key=f"eb_{row['id']}"): 
                     st.session_state.editing_id = row['id']; st.rerun()
                 

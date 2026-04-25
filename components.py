@@ -27,6 +27,9 @@ def render_forge():
     if not models or not markets:
         st.warning("Setup Required: Architect your Models and Markets first."); return
 
+    # SHARED NEWS LIST FOR CONSISTENCY
+    news_options = ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"]
+
     with st.form("forge_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -34,9 +37,9 @@ def render_forge():
             mod = st.selectbox("MODEL", models)
             mvar = st.text_input("VARIATION (e.g. ODA, MACRO)").upper()
             mkt = st.selectbox("MARKET", markets) 
-            side = st.selectbox("DIRECTION", ["BUY", "SELL"]) # New Buy/Sell Field
+            side = st.selectbox("DIRECTION", ["BUY", "SELL"]) 
             is_hindsight = st.checkbox("MARK AS HINDSIGHT / STUDY")
-            news = st.selectbox("NEWS IMPACT", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"])
+            news = st.selectbox("NEWS IMPACT", news_options)
 
         with c2:
             etype = st.text_input("ENTRY TYPE (e.g. SILVER BULLET, MSS)").upper()
@@ -77,7 +80,7 @@ def render_forge():
                 "trader_username": st.session_state.user,
                 "model_name": mod, "model_var": mvar, "type": env, "market": mkt,
                 "entry_time": tm, "entry_tf": tf, "session": sess, "result": res,
-                "direction": side, # Saved to DB
+                "direction": side,
                 "risk_pc": rsk, "rr": calc_rr, "sl_handles": sl_h, "tp_handles": tp_h,
                 "entry_price": e_price, "sl_price": sl_price, "tp_price": tp_price,
                 "notes": nts, "date": str(dt), "duration_mins": dur, 
