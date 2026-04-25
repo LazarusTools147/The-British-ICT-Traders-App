@@ -108,8 +108,8 @@ def render_trade_list(t_df, supabase):
                         e_side = st.selectbox("SIDE", ["BUY", "SELL"], index=["BUY", "SELL"].index(side))
                         e_risk = st.number_input("RISK %", value=float(row.get('risk_pc', 1.0)))
                         e_tar = st.text_input("TARGET", value=str(row.get('target', '')))
-                        e_news = st.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP/CPI"].index(row.get('news_impact', 'NONE')))
-                    
+                        e_news = st.selectbox("NEWS", ["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"], index=["NONE", "LOW", "MEDIUM", "HIGH", "NFP", "CPI", "FOMC", "UNEMPLOYMENT CLAIMS", "BANK HOLIDAY", "OTHER"].index(row.get('news_impact', 'NONE')))
+
                     st.write("**VOLATILITY RANGES (HANDLES)**")
                     v1, v2, v3, v4, v5 = st.columns(5)
                     e_cbdr = v1.number_input("CBDR", value=float(row.get('cbdr_size') or 0.0), step=0.25)
