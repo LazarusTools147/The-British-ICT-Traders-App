@@ -33,8 +33,8 @@ def render_range_bar(sub_df, col_name, title, color, unique_key):
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
         )
-        # THE FIX: Unique key including the mode (WIN/LOSS/STUDY) and session name
-        st.plotly_chart(fig, use_container_width=True, key=f"bar_{col_name}_{unique_key}")
+        # THE ULTIMATE KEY: Ensures no collision across different tabs or sessions
+        st.plotly_chart(fig, use_container_width=True, key=f"chart_{unique_key}_{col_name}_{color.replace('#','')}")
     else:
         st.caption(f"No {title} data")
 
@@ -55,7 +55,7 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
             paper_bgcolor='rgba(0,0,0,0)', 
             plot_bgcolor='rgba(0,0,0,0)'
         )
-        st.plotly_chart(fig_vol, use_container_width=True, key=f"vol_{title_prefix}_{mode_label}")
+        st.plotly_chart(fig_vol, use_container_width=True, key=f"volume_plot_{mode_label}_{title_prefix}")
         
     with col_side:
         avg_dur = sub_df['duration_mins'].mean() if 'duration_mins' in sub_df.columns else 0
@@ -92,19 +92,19 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
                 fig = px.pie(sub_df, names=field, hole=0.7, color_discrete_sequence=px.colors.qualitative.Bold)
                 fig.update_layout(showlegend=False, height=160, margin=dict(t=10, b=10, l=5, r=5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 fig.update_traces(textposition='inside', textinfo='percent+label', textfont_size=9)
-                st.plotly_chart(fig, use_container_width=True, key=f"dn_{field}_{mode_label}_{title_prefix}")
+                st.plotly_chart(fig, use_container_width=True, key=f"donut_{field}_{mode_label}_{title_prefix}")
             else:
                 st.caption("No Data")
 
     # --- BOTTOM ROW: 5-BAR VOLATILITY ROW ---
     st.write(f"### 📏 SESSION VOLATILITY DISTRIBUTION ({st.session_state.get('bucket_size', 10.0)}H BUCKETS)")
     c1, c2, c3, c4, c5 = st.columns(5)
-    # UPDATED: Passing the unique mode_label to the range bars
-    with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF", f"{mode_label}_{title_prefix}_cbdr")
-    with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC", f"{mode_label}_{title_prefix}_asia")
-    with c3: render_range_bar(sub_df, 'london_size', 'LONDON', "#00A2FF", f"{mode_label}_{title_prefix}_lon")
-    with c4: render_range_bar(sub_df, 'ny_am_size', 'NY AM', "#FFB700", f"{mode_label}_{title_prefix}_am")
-    with c5: render_range_bar(sub_df, 'ny_pm_size', 'NY PM', "#FF4B4B", f"{mode_label}_{title_prefix}_pm")
+    # Passing extremely specific keys to ensure uniqueness
+    with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF", f"key_{mode_label}_{title_prefix}_cbdr")
+    with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC", f"key_{mode_label}_{title_prefix}_asia")
+    with c3: render_range_bar(sub_df, 'london_size', 'LONDON', "#00A2FF", f"key_{mode_label}_{title_prefix}_lon")
+    with c4: render_range_bar(sub_df, 'ny_am_size', 'NY AM', "#FFB700", f"key_{mode_label}_{title_prefix}_am")
+    with c5: render_range_bar(sub_df, 'ny_pm_size', 'NY PM', "#FF4B4B", f"key_{mode_label}_{title_prefix}_pm")
 
 def render_analytics(df, label):
     st.markdown(f'<h1 style="color: white;">📊 {label} PERFORMANCE</h1>', unsafe_allow_html=True)
@@ -116,7 +116,7 @@ def render_analytics(df, label):
     perf_df = df[is_hind == False].copy()
     study_df = df[is_hind == True].copy()
 
-    # --- MATH ENGINE: CALCULATE REAL RR AND % RETURNS ON PERFORMANCE ONLY ---
+    # --- MATH ENGINE ---
     perf_df['adj_rr'] = perf_df.apply(lambda x: -abs(x['rr']) if x['result'] == 'LOSS' else abs(x['rr']) if x['result'] == 'WIN' else 0, axis=1)
     perf_df['net_return'] = perf_df.apply(lambda x: -(x['risk_pc']) if x['result'] == 'LOSS' else (x['rr'] * x['risk_pc']) if x['result'] == 'WIN' else 0, axis=1)
     
@@ -142,13 +142,13 @@ def render_analytics(df, label):
         fig_rr = px.histogram(perf_df, x='adj_rr', color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
         fig_rr.update_traces(xbins=dict(size=1))
         fig_rr.update_layout(height=300, margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_rr, use_container_width=True, key=f"rr_dist_{label}")
+        st.plotly_chart(fig_rr, use_container_width=True, key=f"rr_dist_chart_{label}")
         
     with c_right:
         st.write("**RESULT RATIO**")
         fig_res = px.pie(perf_df, names='result', hole=0.6, color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
         fig_res.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=True)
-        st.plotly_chart(fig_res, use_container_width=True, key=f"main_ratio_{label}")
+        st.plotly_chart(fig_res, use_container_width=True, key=f"main_pie_ratio_{label}")
 
     st.divider()
     
