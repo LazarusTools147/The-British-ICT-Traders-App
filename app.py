@@ -124,7 +124,7 @@ with tabs[2]: # LIVE PERFORMANCE
         df = all_trades[(all_trades['type'] == 'LIVE') & (all_trades['hindsight'] == False)]
         if st.session_state.market_focus != "ALL":
             df = df[df['market'] == st.session_state.market_focus]
-        render_analytics(df, f"LIVE ({st.session_state.market_focus})")
+        render_analytics(df, f"LIVE_{st.session_state.market_focus}")
     else: st.info("Vault empty.")
 
 with tabs[3]: # TEST PERFORMANCE
@@ -132,7 +132,8 @@ with tabs[3]: # TEST PERFORMANCE
         df = all_trades[(all_trades['type'] == 'BACKTEST/DEMO') | (all_trades['hindsight'] == True)]
         if st.session_state.market_focus != "ALL":
             df = df[df['market'] == st.session_state.market_focus]
-        render_analytics(df, f"STUDY ({st.session_state.market_focus})")
+        # FIXED: Changed the label string to ensure unique element IDs
+        render_analytics(df, f"STUDY_DATA_{st.session_state.market_focus}")
     else: st.info("Vault empty.")
 
 with tabs[4]: 
