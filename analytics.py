@@ -33,8 +33,8 @@ def render_range_bar(sub_df, col_name, title, color, unique_key):
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
         )
-        # INJECTED UNIQUE_KEY TO PREVENT DUPLICATE ELEMENT ERROR
-        st.plotly_chart(fig, use_container_width=True, key=f"bar_{col_name}_{unique_key}_{color}")
+        # THE FIX: Unique key including the mode (WIN/LOSS/STUDY) and session name
+        st.plotly_chart(fig, use_container_width=True, key=f"bar_{col_name}_{unique_key}")
     else:
         st.caption(f"No {title} data")
 
@@ -99,12 +99,12 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
     # --- BOTTOM ROW: 5-BAR VOLATILITY ROW ---
     st.write(f"### 📏 SESSION VOLATILITY DISTRIBUTION ({st.session_state.get('bucket_size', 10.0)}H BUCKETS)")
     c1, c2, c3, c4, c5 = st.columns(5)
-    # ADDED UNIQUE_KEY PASS-THROUGH TO STOP CRASH
-    with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF", f"{mode_label}_{title_prefix}")
-    with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC", f"{mode_label}_{title_prefix}")
-    with c3: render_range_bar(sub_df, 'london_size', 'LONDON', "#00A2FF", f"{mode_label}_{title_prefix}")
-    with c4: render_range_bar(sub_df, 'ny_am_size', 'NY AM', "#FFB700", f"{mode_label}_{title_prefix}")
-    with c5: render_range_bar(sub_df, 'ny_pm_size', 'NY PM', "#FF4B4B", f"{mode_label}_{title_prefix}")
+    # UPDATED: Passing the unique mode_label to the range bars
+    with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF", f"{mode_label}_{title_prefix}_cbdr")
+    with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC", f"{mode_label}_{title_prefix}_asia")
+    with c3: render_range_bar(sub_df, 'london_size', 'LONDON', "#00A2FF", f"{mode_label}_{title_prefix}_lon")
+    with c4: render_range_bar(sub_df, 'ny_am_size', 'NY AM', "#FFB700", f"{mode_label}_{title_prefix}_am")
+    with c5: render_range_bar(sub_df, 'ny_pm_size', 'NY PM', "#FF4B4B", f"{mode_label}_{title_prefix}_pm")
 
 def render_analytics(df, label):
     st.markdown(f'<h1 style="color: white;">📊 {label} PERFORMANCE</h1>', unsafe_allow_html=True)
@@ -153,11 +153,11 @@ def render_analytics(df, label):
     st.divider()
     
     # --- DEEP DIVES ---
-    with st.expander("🏆 WINNERS (PERFORMANCE)"): 
+    with st.expander("🏆 PERFORMANCE WINNERS"): 
         win_execs = perf_df[perf_df['result'] == 'WIN']
         render_deep_dive_content(win_execs, "WIN", "#00FF00", label)
         
-    with st.expander("💀 LOSSES (PERFORMANCE)"): 
+    with st.expander("💀 PERFORMANCE LOSSES"): 
         loss_execs = perf_df[perf_df['result'] == 'LOSS']
         render_deep_dive_content(loss_execs, "LOSS", "#FF0000", label)
         
