@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-def render_range_bar(sub_df, col_name, title, color):
+def render_range_bar(sub_df, col_name, title, color, unique_key):
     """Renders a histogram grouped by the market-specific bucket size."""
     if col_name in sub_df.columns and not sub_df[col_name].dropna().empty:
         plot_df = sub_df[sub_df[col_name] > 0].copy()
@@ -33,7 +33,8 @@ def render_range_bar(sub_df, col_name, title, color):
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
         )
-        st.plotly_chart(fig, use_container_width=True, key=f"bar_{col_name}_{title}_{color}")
+        # INJECTED UNIQUE_KEY TO PREVENT DUPLICATE ELEMENT ERROR
+        st.plotly_chart(fig, use_container_width=True, key=f"bar_{col_name}_{unique_key}_{color}")
     else:
         st.caption(f"No {title} data")
 
@@ -98,34 +99,38 @@ def render_deep_dive_content(sub_df, title_prefix, color_hex, mode_label):
     # --- BOTTOM ROW: 5-BAR VOLATILITY ROW ---
     st.write(f"### 📏 SESSION VOLATILITY DISTRIBUTION ({st.session_state.get('bucket_size', 10.0)}H BUCKETS)")
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF")
-    with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC")
-    with c3: render_range_bar(sub_df, 'london_size', 'LONDON', "#00A2FF")
-    with c4: render_range_bar(sub_df, 'ny_am_size', 'NY AM', "#FFB700")
-    with c5: render_range_bar(sub_df, 'ny_pm_size', 'NY PM', "#FF4B4B")
+    # ADDED UNIQUE_KEY PASS-THROUGH TO STOP CRASH
+    with c1: render_range_bar(sub_df, 'cbdr_size', 'CBDR', "#FFFFFF", f"{mode_label}_{title_prefix}")
+    with c2: render_range_bar(sub_df, 'asia_size', 'ASIA', "#00FFCC", f"{mode_label}_{title_prefix}")
+    with c3: render_range_bar(sub_df, 'london_size', 'LONDON', "#00A2FF", f"{mode_label}_{title_prefix}")
+    with c4: render_range_bar(sub_df, 'ny_am_size', 'NY AM', "#FFB700", f"{mode_label}_{title_prefix}")
+    with c5: render_range_bar(sub_df, 'ny_pm_size', 'NY PM', "#FF4B4B", f"{mode_label}_{title_prefix}")
 
 def render_analytics(df, label):
     st.markdown(f'<h1 style="color: white;">📊 {label} PERFORMANCE</h1>', unsafe_allow_html=True)
     if df.empty:
         st.info("Vault empty."); return
 
-    # --- MATH ENGINE: CALCULATE REAL RR AND % RETURNS ---
-    # Force RR to be negative for losses
-    df['adj_rr'] = df.apply(lambda x: -abs(x['rr']) if x['result'] == 'LOSS' else abs(x['rr']) if x['result'] == 'WIN' else 0, axis=1)
-    # Calculate % Return (Risk % * RR)
-    df['net_return'] = df.apply(lambda x: -(x['risk_pc']) if x['result'] == 'LOSS' else (x['rr'] * x['risk_pc']) if x['result'] == 'WIN' else 0, axis=1)
+    # --- 1. THE FIREWALL: SPLIT PERFORMANCE VS HINDSIGHT ---
+    is_hind = df['hindsight'] if 'hindsight' in df.columns else False
+    perf_df = df[is_hind == False].copy()
+    study_df = df[is_hind == True].copy()
+
+    # --- MATH ENGINE: CALCULATE REAL RR AND % RETURNS ON PERFORMANCE ONLY ---
+    perf_df['adj_rr'] = perf_df.apply(lambda x: -abs(x['rr']) if x['result'] == 'LOSS' else abs(x['rr']) if x['result'] == 'WIN' else 0, axis=1)
+    perf_df['net_return'] = perf_df.apply(lambda x: -(x['risk_pc']) if x['result'] == 'LOSS' else (x['rr'] * x['risk_pc']) if x['result'] == 'WIN' else 0, axis=1)
     
-    total_rr = df['adj_rr'].sum()
-    total_net = df['net_return'].sum()
+    total_rr = perf_df['adj_rr'].sum()
+    total_net = perf_df['net_return'].sum()
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    wins = len(df[df['result'] == 'WIN'])
-    total = len(df)
+    wins = len(perf_df[perf_df['result'] == 'WIN'])
+    total = len(perf_df)
     win_rate = (wins / total * 100) if total > 0 else 0
     
     m1.metric("WIN RATE", f"{round(win_rate, 1)}%")
-    m2.metric("AVG DUR", f"{round(df['duration_mins'].mean(), 1)}m")
-    m3.metric("AVG RISK", f"{round(df['risk_pc'].mean(), 1)}%")
+    m2.metric("STUDY COUNT", len(study_df))
+    m3.metric("AVG RISK", f"{round(perf_df['risk_pc'].mean(), 1)}%" if total > 0 else "0%")
     m4.metric("TOTAL RR", f"{round(total_rr, 1)}R", delta=f"{round(total_rr, 1)}R")
     m5.metric("NET GROWTH", f"{round(total_net, 2)}%", delta=f"{round(total_net, 2)}%")
 
@@ -134,30 +139,30 @@ def render_analytics(df, label):
     c_left, c_right = st.columns([2, 1])
     with c_left:
         st.write("**RR PERFORMANCE DISTRIBUTION**")
-        # Now uses adj_rr to show losses on the negative axis
-        fig_rr = px.histogram(df, x='adj_rr', color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
+        fig_rr = px.histogram(perf_df, x='adj_rr', color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
         fig_rr.update_traces(xbins=dict(size=1))
         fig_rr.update_layout(height=300, margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_rr, use_container_width=True, key=f"rr_dist_{label}")
         
     with c_right:
         st.write("**RESULT RATIO**")
-        fig_res = px.pie(df, names='result', hole=0.6, color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
+        fig_res = px.pie(perf_df, names='result', hole=0.6, color='result', color_discrete_map={'WIN': '#00FF00', 'LOSS': '#FF0000', 'BE': '#808080'})
         fig_res.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=True)
         st.plotly_chart(fig_res, use_container_width=True, key=f"main_ratio_{label}")
 
     st.divider()
     
     # --- DEEP DIVES ---
-    with st.expander("🏆 WINNERS"): 
-        win_execs = df[df['result'] == 'WIN']
+    with st.expander("🏆 WINNERS (PERFORMANCE)"): 
+        win_execs = perf_df[perf_df['result'] == 'WIN']
         render_deep_dive_content(win_execs, "WIN", "#00FF00", label)
         
-    with st.expander("💀 LOSSES"): 
-        loss_execs = df[df['result'] == 'LOSS']
+    with st.expander("💀 LOSSES (PERFORMANCE)"): 
+        loss_execs = perf_df[perf_df['result'] == 'LOSS']
         render_deep_dive_content(loss_execs, "LOSS", "#FF0000", label)
         
     with st.expander("🧠 HINDSIGHT DEEP-DIVE"):
-        if 'hindsight' in df.columns:
-            h_df = df[df['hindsight'] == True]
-            render_deep_dive_content(h_df, "STUDY", "#00A2FF", label)
+        if not study_df.empty:
+            render_deep_dive_content(study_df, "STUDY", "#00A2FF", label)
+        else:
+            st.info("No Hindsight studies found.")
